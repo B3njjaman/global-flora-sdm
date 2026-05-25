@@ -85,7 +85,7 @@ THRESHOLDS = ["maxTSS", "p10", "min_train"]  # maxTSS, 10th percentile, min trai
 # ----------------------------------------------------------------------------
 # Forecasting a 2050 (Etapas 2-futuro y 7)
 # ----------------------------------------------------------------------------
-GCMS = ["GFDL-ESM4", "IPSL-CM6A-LR", "MPI-ESM1-2-HR", "MRI-ESM2-0"]  # ≥4 GCMs
+GCMS = ["ACCESS-CM2", "IPSL-CM6A-LR", "MPI-ESM1-2-HR", "MRI-ESM2-0"]  # ≥4 GCMs (GFDL-ESM4 no tiene ssp245 a 2.5m en WorldClim)
 SSPS = ["ssp245", "ssp585"]        # SSP2-4.5 (medio) y SSP5-8.5 (alto)
 FUTURE_PERIOD = "2041-2060"        # centrado en 2050
 

@@ -289,6 +289,15 @@ def compute_northness_eastness(
     northness: xr.DataArray = np.cos(aspect_rad).astype(np.float32)
     eastness: xr.DataArray = np.sin(aspect_rad).astype(np.float32)
 
+    # Terreno plano (aspecto indefinido → NaN) NO tiene orientación: se codifica
+    # northness = eastness = 0 (sin componente direccional), no NaN. Conservar NaN
+    # aquí descartaría presencias en terreno llano — catastrófico para endémicas
+    # del Atacama (p. ej. Skytanthus, Nolana, Miqueliopuntia pierden ~95% de sus
+    # puntos). El océano/borde (elevación NaN) se vuelve a enmascarar a NaN aguas
+    # abajo con land_mask, así que rellenar con 0 aquí es seguro.
+    northness = northness.fillna(np.float32(0.0))
+    eastness = eastness.fillna(np.float32(0.0))
+
     northness.name = "northness"
     eastness.name = "eastness"
 
