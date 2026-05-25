@@ -264,10 +264,10 @@ def _download_natural_earth(dest_dir: Path, logger) -> Path:
     Devuelve la ruta al .shp extraído.
     """
     urls = [
-        # fuente primaria — GitHub Natural Earth
-        "https://github.com/nvkelso/natural-earth-vector/raw/master/110m_physical/ne_110m_land.zip",
-        # espejo alternativo — naturalearthdata.com
-        "https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/110m/physical/ne_110m_land.zip",
+        # fuente primaria — bucket oficial S3 de Natural Earth (estable)
+        "https://naturalearth.s3.amazonaws.com/110m_physical/ne_110m_land.zip",
+        # espejo — GitHub Natural Earth (ruta zips/)
+        "https://github.com/nvkelso/natural-earth-vector/raw/master/zips/110m_physical/ne_110m_land.zip",
     ]
 
     zip_path = dest_dir / "ne_110m_land.zip"
@@ -491,10 +491,15 @@ def main() -> None:
             logger.error("Fallo definitivo en descarga de %s: %s", key, exc)
             sys.exit(1)
 
-        # Extraer solo si el directorio no contiene TIFs ya, o si --overwrite
-        existing_tifs = list(wc_dir.glob("wc2.1_2.5m_*.tif"))
-        if existing_tifs and not args.overwrite:
-            logger.info("TIFs de %s ya extraídos (%d archivos) — omitiendo.", key, len(existing_tifs))
+        # Extraer solo si los TIFs de ESTE zip aún no están, o si --overwrite.
+        # (Antes se usaba un glob global, lo que hacía que tras extraer bio.zip
+        #  se omitiera por error la extracción de elev.zip.)
+        with zipfile.ZipFile(zip_dest, "r") as _zf:
+            members = [Path(m).name for m in _zf.namelist()
+                       if Path(m).suffix.lower() in (".tif", ".tiff")]
+        already_extracted = bool(members) and all((wc_dir / m).exists() for m in members)
+        if already_extracted and not args.overwrite:
+            logger.info("TIFs de %s ya extraídos (%d archivos) — omitiendo.", key, len(members))
         else:
             try:
                 _extract_zip(zip_dest, wc_dir, logger)
