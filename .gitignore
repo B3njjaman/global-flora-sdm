@@ -4,6 +4,7 @@ data/raw/worldclim_future/*
 data/processed/rasters_aligned/*
 data/processed/species_datasets/*
 data/modeling/ensemble_models/*
+data/raw/natural_earth/
 !**/.gitkeep
 
 # Rasters y formatos pesados
