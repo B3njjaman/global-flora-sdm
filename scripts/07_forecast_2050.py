@@ -517,7 +517,9 @@ def predict_ensemble(
         for algo, model, w in active:
             Xi = Xb_scaled if (algo in scaled_algos and Xb_scaled is not None) else Xb
             if hasattr(model, "predict_proba"):
-                prob = model.predict_proba(Xi)[:, 1]
+                pp = model.predict_proba(Xi)
+                # sklearn devuelve (n, 2); pyGAM LogisticGAM devuelve (n,) = P(y=1).
+                prob = pp[:, 1] if np.ndim(pp) == 2 else np.asarray(pp).ravel()
             elif hasattr(model, "predict"):
                 prob = model.predict(Xi)  # MaxEnt (elapid) devuelve probabilidad
             else:
