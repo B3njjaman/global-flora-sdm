@@ -182,32 +182,39 @@ def mess(
         ref_col_clean = ref_col[~np.isnan(ref_col)]
         q_col = query_points[:, j]
         r = ref_range[j]
+        n_clean = len(ref_col_clean)
 
-        for i in range(n_query):
-            p = q_col[i]
-            if np.isnan(p):
-                similarity[i, j] = np.nan
-                continue
+        if n_clean == 0:
+            similarity[:, j] = np.nan
+            continue
 
-            # Proporción de puntos de referencia con valor <= p (ECDF en p)
-            f = np.sum(ref_col_clean <= p) / len(ref_col_clean)
+        # VECTORIZADO (antes: doble bucle O(n_query·n_ref) -> ~2 h por especie a
+        # escala global, inviable). f_i = proporción de referencia <= p_i vía
+        # búsqueda binaria sobre el array ordenado: O(n_query·log n_ref) -> segundos.
+        # Mismas ramas y precedencia que la versión escalar original.
+        ref_sorted = np.sort(ref_col_clean)
+        nan_q = np.isnan(q_col)
+        counts = np.searchsorted(ref_sorted, q_col, side="right")  # nº de ref <= p
+        f = counts / n_clean
 
-            if f == 0 or p < ref_min[j]:
-                # Extrapolación por debajo del mínimo
-                if r == 0:
-                    similarity[i, j] = 0.0
-                else:
-                    similarity[i, j] = (p - ref_min[j]) / r * 100.0
-            elif f <= 0.5:
-                similarity[i, j] = 2.0 * f * 100.0
-            elif f < 1.0:
-                similarity[i, j] = (1.0 - f) * 2.0 * 100.0
-            else:
-                # Extrapolación por encima del máximo
-                if r == 0:
-                    similarity[i, j] = 0.0
-                else:
-                    similarity[i, j] = (p - ref_max[j]) / r * 100.0
+        below = (f == 0) | (q_col < ref_min[j])       # extrapolación bajo el mínimo
+        rest = ~below
+        mid_low = rest & (f <= 0.5)
+        mid_high = rest & ~mid_low & (f < 1.0)
+        above = rest & ~mid_low & ~mid_high            # f >= 1.0: extrapolación sobre el máximo
+
+        sim = np.empty(n_query, dtype=float)
+        if r == 0:
+            sim[below] = 0.0
+            sim[above] = 0.0
+        else:
+            sim[below] = (q_col[below] - ref_min[j]) / r * 100.0
+            sim[above] = (q_col[above] - ref_max[j]) / r * 100.0
+        sim[mid_low] = 2.0 * f[mid_low] * 100.0
+        sim[mid_high] = (1.0 - f[mid_high]) * 2.0 * 100.0
+        sim[nan_q] = np.nan
+
+        similarity[:, j] = sim
 
     # MESS = mínimo de similitud variable a variable
     with warnings.catch_warnings():

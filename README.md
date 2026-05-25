@@ -30,10 +30,21 @@ La especificación metodológica completa está en [`docs/proyecto_sdm.md`](docs
 | 4. Dataset modelable | `scripts/04_extraccion.py` | `data/processed/species_datasets/*.parquet` |
 | 5. Ensemble (5 algoritmos) | `scripts/05_modelado.py` | `data/modeling/ensemble_models/` |
 | 6. Validación y métricas | `scripts/06_validacion.py` | `outputs/tables/` |
-| 7. Proyección a 2050 | `scripts/07_forecast_2050.py` | `outputs/maps/` |
+| 7. Idoneidad presente | `scripts/07b_present_suitability.py` | `outputs/maps/*_present_suitability.tif` |
+| 7b. Proyección a 2050 *(diferida)* | `scripts/07_forecast_2050.py` | `outputs/maps/_forecast_deferred/` |
 | 8. Mapas y figuras | `scripts/08_mapas.py` | `outputs/figures/`, `outputs/maps/` |
 
 Las etapas son **secuenciales**: cada una consume las salidas de las anteriores.
+
+> **Estado de la iteración 1.** Se entregan: ocurrencias limpias, capas alineadas,
+> **14 modelos ensemble**, **validación completa** (TSS/AUC/Boyce/Brier/MESS, CV espacial)
+> e **idoneidad del presente** (mapas GeoTIFF + figuras). El **forecast a 2050** está
+> implementado y validado a nivel de datos (las 8 capas CMIP6 GCM×SSP se descargan y
+> proyectan), pero **se difiere como mejora**: el cálculo de MESS a escala global
+> (~37 millones de píxeles) es el cuello de botella —incluso vectorizado con búsqueda
+> binaria— y requiere optimización adicional (procesamiento por bloques / submuestreo de
+> referencia). Las proyecciones futuras parciales ya calculadas quedan en
+> `outputs/maps/_forecast_deferred/`. Ver §Roadmap.
 
 ## Instalación
 

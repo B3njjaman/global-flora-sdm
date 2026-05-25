@@ -460,6 +460,7 @@ def build_predictor_stack(
 def predict_ensemble(
     X: np.ndarray,
     bundle: dict[str, Any],
+    batch_size: int = 2_000_000,
 ) -> np.ndarray:
     """Aplica el ensemble ponderado por TSS sobre la matriz de predictores.
 
@@ -483,40 +484,48 @@ def predict_ensemble(
     tss_weights = bundle["tss_weights"]
     scaled_algos: list[str] = bundle.get("scaled_algos", [])
 
-    weighted_sum = np.zeros(len(X), dtype=np.float64)
-    weight_total = 0.0
+    n = len(X)
+    # Algoritmos activos: tss_weights ya incorpora el umbral (peso 0 = excluido por
+    # la Etapa 5). Antes se re-comparaba el peso normalizado (~0.2) contra el umbral
+    # 0.5 y se excluían todos -> mapas en cero. Ahora se usa el peso directo.
+    active = [(a, models[a], tss_weights.get(a, 0.0))
+              for a in models if tss_weights.get(a, 0.0) > 0.0]
+    if not active:
+        logger.warning("Ningún algoritmo con peso > 0; retornando zeros.")
+        return np.zeros(n, dtype=np.float32)
 
-    for algo, model in models.items():
-        tss = tss_weights.get(algo, 0.0)
-        if tss < config.TSS_MIN_ENSEMBLE:
-            logger.debug("Algoritmo %s excluido (TSS=%.3f < %.2f)", algo, tss, config.TSS_MIN_ENSEMBLE)
-            continue
+    # Paralelizar la predicción en todos los núcleos donde el modelo lo soporte (RF…).
+    for _algo, _model, _w in active:
+        if hasattr(_model, "n_jobs"):
+            try:
+                _model.n_jobs = -1
+            except Exception:  # noqa: BLE001
+                pass
 
-        # Aplicar scaler solo a los algoritmos que lo requieren
-        X_input = (
-            scaler.transform(X)
-            if (algo in scaled_algos and scaler is not None)
-            else X
-        )
+    weight_total = float(sum(w for _, _, w in active))
+    out = np.zeros(n, dtype=np.float64)
 
-        if hasattr(model, "predict_proba"):
-            prob = model.predict_proba(X_input)[:, 1]
-        elif hasattr(model, "predict"):
-            # MaxEnt de elapid devuelve directamente probabilidad
-            prob = model.predict(X_input)
-        else:
-            logger.warning("Modelo %s sin predict_proba ni predict; se omite.", algo)
-            continue
+    # Predicción POR LOTES de píxeles: a escala global (decenas de millones de
+    # píxeles) predecir todo de una vez agota la RAM —p. ej. pyGAM construye una
+    # base B-spline (N, n_splines) de varios GB y revienta. Procesar en bloques
+    # acota la memoria y mantiene el paralelismo por núcleos.
+    for start in range(0, n, batch_size):
+        end = min(start + batch_size, n)
+        Xb = X[start:end]
+        Xb_scaled = scaler.transform(Xb) if scaler is not None else None
+        acc = np.zeros(end - start, dtype=np.float64)
+        for algo, model, w in active:
+            Xi = Xb_scaled if (algo in scaled_algos and Xb_scaled is not None) else Xb
+            if hasattr(model, "predict_proba"):
+                prob = model.predict_proba(Xi)[:, 1]
+            elif hasattr(model, "predict"):
+                prob = model.predict(Xi)  # MaxEnt (elapid) devuelve probabilidad
+            else:
+                continue
+            acc += prob * w
+        out[start:end] = acc
 
-        weighted_sum += prob * tss
-        weight_total += tss
-        logger.debug("  %s TSS=%.3f contribuye al ensemble.", algo, tss)
-
-    if weight_total == 0:
-        logger.warning("Ningún algoritmo pasó el umbral TSS; retornando zeros.")
-        return np.zeros(len(X), dtype=np.float32)
-
-    return (weighted_sum / weight_total).astype(np.float32)
+    return (out / weight_total).astype(np.float32)
 
 
 def reconstruct_raster(
