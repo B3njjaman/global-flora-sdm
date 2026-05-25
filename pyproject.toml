@@ -1,0 +1,60 @@
+[project]
+name = "global-flora-sdm"
+version = "0.1.0"
+description = "Ensemble species distribution models for 21 flora species at global scale, with CMIP6 forecasting to 2050"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = "MIT"
+authors = [{ name = "B3njjaman" }]
+keywords = ["sdm", "species-distribution-modeling", "ensemble", "gbif", "worldclim", "cmip6", "ecology", "forecasting"]
+
+dependencies = [
+    # --- Datos tabulares y geometría vectorial ---
+    "pandas>=2.0",
+    "openpyxl>=3.1",          # lectura del .xlsx de GBIF
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "pyproj>=3.6",
+    # --- Raster I/O y procesamiento ---
+    "rasterio>=1.3",
+    "rioxarray>=0.15",
+    "xarray>=2024.1",
+    "dask>=2024.1",
+    "rasterstats>=0.19",
+    # --- Análisis de terreno ---
+    "xarray-spatial>=0.3",    # slope / aspect / curvature (alternativa pura-python a richdem)
+    # --- Modelado (ensemble) ---
+    "scikit-learn>=1.3",      # GLM (LogisticRegression), RF
+    "lightgbm>=4.0",          # GBM
+    "pygam>=0.9",             # GAM
+    "elapid>=1.0",            # MaxEnt moderno + Boyce index + sample_raster
+    # --- Descarga de clima futuro (CMIP6) ---
+    "cdsapi>=0.6",            # Copernicus Climate Data Store
+    "xclim>=0.48",            # cálculo de bioclim derivadas
+    # --- Visualización ---
+    "matplotlib>=3.8",
+    "contextily>=1.5",
+    "folium>=0.15",
+    "cartopy>=0.22",
+    # --- Utilidades ---
+    "requests>=2.31",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+bart = ["pymc-bart>=0.5"]    # opcional, iteración avanzada
+dev = ["pytest>=8.0", "ruff>=0.5", "ipykernel>=6.29"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# Proyecto basado en scripts (no es una librería importable): no descubrir paquetes.
+# pyproject existe como fuente única de dependencias y metadatos del proyecto.
+[tool.setuptools]
+py-modules = []
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"

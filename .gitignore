@@ -1,0 +1,41 @@
+# ---- Datos pesados descargados / derivados (no versionar) ----
+data/raw/worldclim_present/*
+data/raw/worldclim_future/*
+data/processed/rasters_aligned/*
+data/processed/species_datasets/*
+data/modeling/ensemble_models/*
+!**/.gitkeep
+
+# Rasters y formatos pesados
+*.tif
+*.tiff
+*.nc
+*.grib
+*.zip
+*.7z
+
+# Salidas regenerables
+outputs/maps/*
+outputs/figures/*
+!outputs/**/.gitkeep
+# Se conservan tablas de métricas (CSV) por ser ligeras y revisables
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Entornos y secretos
+.env
+.cdsapirc
+
+# IDE / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
