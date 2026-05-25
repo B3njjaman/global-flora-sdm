@@ -83,6 +83,15 @@ global-flora-sdm/
 
 Sigue el protocolo ODMAP (Zurell et al. 2020). Validación con CV espacial (block CV 500–1000 km), métricas solo-presencia (Boyce/CBI), MESS para extrapolación, e hindcasting para validar el forecast. Detalle completo en [`docs/proyecto_sdm.md`](docs/proyecto_sdm.md).
 
+## Resultados (iteración 1)
+
+14 modelos ensemble entrenados y validados con CV espacial; mapas de **idoneidad
+del presente** (`outputs/maps/*_present_suitability.tif`) y figuras
+(`outputs/figures/`). Resumen de métricas y lectura crítica en
+[`docs/resultados_iter1.md`](docs/resultados_iter1.md); métricas completas por
+especie y algoritmo en `outputs/tables/metrics_all.csv`. El **forecast a 2050 está
+diferido** como mejora (cuello de botella: MESS global). Ver §Roadmap.
+
 ## Licencia
 
 MIT.
