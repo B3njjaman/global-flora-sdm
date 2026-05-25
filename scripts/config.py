@@ -101,6 +101,73 @@ GROUP_A_COSMOPOLITAN = ["Schinus areira", "Atriplex semibaccata"]
 TRUNCATED_SPECIES = ["Atriplex semibaccata", "Schinus areira", "Nolana divaricata"]
 
 
+# ----------------------------------------------------------------------------
+# Contrato de artefactos entre etapas (fuente de verdad versionada)
+# ----------------------------------------------------------------------------
+
+ENSEMBLE_ARTIFACT_SCHEMA = """
+Contrato canónico de artefactos del pipeline SDM (global-flora-sdm)
+====================================================================
+
+1. config.ENSEMBLE_MODELS/{slug}.joblib  — PRODUCTOR: 05_modelado.py
+                                          CONSUMIDORES: 06, 07, 08
+   Tipo: dict[str, Any]
+   Claves obligatorias:
+     'especie'             : str
+         Nombre científico de la especie.
+     'selected_predictors' : list[str]
+         Orden exacto de features para TODOS los modelos.
+     'scaler'              : sklearn.preprocessing.StandardScaler | None
+         Ajustado sobre X_all (presencias + background) antes de CV.
+     'scaled_algos'        : list[str]
+         Algoritmos que reciben input escalado (p. ej. ['glm','gam','maxent']).
+         Fuente de verdad: aplicar scaler solo a estos en predicción.
+     'models'              : dict[str, estimador_ajustado]
+         Claves permitidas: 'glm', 'gam', 'rf', 'gbm', 'maxent'.
+         Entrenados con 100% de los datos tras CV.
+     'cv_tss'              : dict[str, float]
+         TSS medio (entre folds) por algoritmo.
+     'tss_per_fold'        : dict[str, list[float]]
+         TSS por fold por algoritmo (longitud = N_CV_FOLDS válidos).
+     'auc_per_fold'        : dict[str, list[float]]
+         AUC-ROC por fold por algoritmo (sklearn.metrics.roc_auc_score).
+     'tss_weights'         : dict[str, float]
+         Pesos ensemble normalizados. Peso = 0 si cv_tss < TSS_MIN_ENSEMBLE.
+     'thresholds'          : dict[str, float]
+         Subclaves: 'maxTSS', 'p10', 'min_train'.
+         Calculados sobre las predicciones del ensemble en training completo.
+     'train_env'           : pandas.DataFrame
+         Columnas == selected_predictors. Una fila por registro de
+         entrenamiento (presencias + background). Referencia para MESS.
+
+2. config.SPECIES_DATASETS/{slug}_cv_preds.parquet  — PRODUCTOR: 05_modelado.py
+                                                       CONSUMIDOR: 06_validacion.py
+   Columnas exactas:
+     'presence'    : int (0/1)
+     'cv_fold'     : int
+     'glm'         : float (probabilidad OOF, NaN si no disponible)
+     'gam'         : float (ídem)
+     'rf'          : float (ídem)
+     'gbm'         : float (ídem)
+     'maxent'      : float (ídem)
+     'ensemble'    : float (probabilidad OOF ponderada por tss_weights)
+   Nota: solo se incluyen las columnas de algoritmos efectivamente ajustados.
+
+3. config.SPECIES_DATASETS/{slug}.parquet  — PRODUCTOR: 04_extraccion.py
+   Columnas incluidas:
+     'especie'     : str
+     'presence'    : int (0/1)
+     'lon', 'lat'  : float
+     <PREDICTORS>  : float (todas las variables, incluso las no seleccionadas)
+     'cv_fold'     : int
+
+4. Selección de especies modelables (04_extraccion.py):
+   Leer columna 'grupo' del GPKG config.OCCURRENCES_CLEAN (POST-thinning).
+   Modelar grupo "A" y "B". NO usar config.modelable_species(utils.species_counts())
+   porque ese método usa conteos pre-thinning.
+"""
+
+
 def classify_species(counts: dict[str, int]) -> dict[str, str]:
     """Asigna cada especie a un grupo A/B/C a partir de sus conteos.
 

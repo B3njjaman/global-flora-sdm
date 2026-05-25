@@ -22,12 +22,13 @@ Dependencias de otras etapas
 -----------------------------
 - Etapa 5 (05_modelado.py): modelos en config.ENSEMBLE_MODELS/{slug}.joblib.
   Cada joblib contiene un dict con claves:
-    'models'      : dict[str, estimator]  — un sklearn/elapid estimator por algoritmo
-    'scaler'      : sklearn scaler        — ajustado en entrenamiento
-    'tss_weights' : dict[str, float]      — TSS de CV espacial por algoritmo
-    'thresholds'  : dict[str, float]      — {'maxTSS': float, 'p10': float, 'min_train': float}
-    'feature_names': list[str]            — orden de predictores
-    'train_env'   : np.ndarray (N×P)      — matriz ambiental de entrenamiento (para MESS)
+    'models'             : dict[str, estimator]  — un sklearn/elapid estimator por algoritmo
+    'scaler'             : sklearn scaler        — ajustado en entrenamiento
+    'scaled_algos'       : list[str]             — algoritmos que reciben input escalado
+    'tss_weights'        : dict[str, float]      — TSS de CV espacial por algoritmo
+    'thresholds'         : dict[str, float]      — {'maxTSS': float, 'p10': float, 'min_train': float}
+    'selected_predictors': list[str]             — orden de predictores
+    'train_env'          : pandas.DataFrame      — espacio ambiental de entrenamiento (para MESS)
 - Etapa 6 (06_validacion.py): expone `def mess(...)` si está disponible.
   Se importa con importlib (nombre comienza con dígito). Si no existe, la función
   MESS se implementa localmente (ver _compute_mess_array).
@@ -353,12 +354,13 @@ def load_ensemble(slug: str) -> dict[str, Any]:
 
     Espera encontrar config.ENSEMBLE_MODELS/{slug}.joblib.
     El dict debe tener las claves:
-      - 'models'       : dict[str, estimator]
-      - 'scaler'       : sklearn scaler ajustado
-      - 'tss_weights'  : dict[str, float] — TSS de CV por algoritmo
-      - 'thresholds'   : dict[str, float] — umbrales binarios
-      - 'feature_names': list[str]
-      - 'train_env'    : np.ndarray (N×P) — datos de entrenamiento (para MESS)
+      - 'models'             : dict[str, estimator]
+      - 'scaler'             : sklearn scaler ajustado
+      - 'scaled_algos'       : list[str] — algoritmos que reciben input escalado
+      - 'tss_weights'        : dict[str, float] — TSS de CV por algoritmo
+      - 'thresholds'         : dict[str, float] — umbrales binarios
+      - 'selected_predictors': list[str]
+      - 'train_env'          : pandas.DataFrame — datos de entrenamiento (para MESS)
 
     Parámetros
     ----------
@@ -476,11 +478,10 @@ def predict_ensemble(
     np.ndarray, shape (N_valid,)
         Idoneidad ensemble (0–1).
     """
-    scaler = bundle["scaler"]
+    scaler = bundle.get("scaler")
     models = bundle["models"]
     tss_weights = bundle["tss_weights"]
-
-    X_scaled = scaler.transform(X)
+    scaled_algos: list[str] = bundle.get("scaled_algos", [])
 
     weighted_sum = np.zeros(len(X), dtype=np.float64)
     weight_total = 0.0
@@ -491,11 +492,18 @@ def predict_ensemble(
             logger.debug("Algoritmo %s excluido (TSS=%.3f < %.2f)", algo, tss, config.TSS_MIN_ENSEMBLE)
             continue
 
+        # Aplicar scaler solo a los algoritmos que lo requieren
+        X_input = (
+            scaler.transform(X)
+            if (algo in scaled_algos and scaler is not None)
+            else X
+        )
+
         if hasattr(model, "predict_proba"):
-            prob = model.predict_proba(X_scaled)[:, 1]
+            prob = model.predict_proba(X_input)[:, 1]
         elif hasattr(model, "predict"):
             # MaxEnt de elapid devuelve directamente probabilidad
-            prob = model.predict(X_scaled)
+            prob = model.predict(X_input)
         else:
             logger.warning("Modelo %s sin predict_proba ni predict; se omite.", algo)
             continue
@@ -970,9 +978,18 @@ def process_species(
 
     # ---- Cargar ensemble ----
     bundle = load_ensemble(slug)
-    feature_names: list[str] = bundle["feature_names"]
+    feature_names: list[str] = bundle["selected_predictors"]
     thresholds: dict[str, float] = bundle.get("thresholds", {})
-    train_env: np.ndarray | None = bundle.get("train_env")
+    # train_env es un DataFrame; convertir a ndarray para MESS
+    _train_env_raw = bundle.get("train_env")
+    if _train_env_raw is not None:
+        train_env: np.ndarray | None = (
+            _train_env_raw.values
+            if hasattr(_train_env_raw, "values")
+            else np.asarray(_train_env_raw)
+        )
+    else:
+        train_env = None
 
     # ---- Capas topográficas constantes ----
     logger.info("Cargando capas topográficas (constantes)...")

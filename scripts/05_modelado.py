@@ -31,6 +31,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
 import config
@@ -242,10 +243,10 @@ def _spatial_cv(
     predictors: list[str],
     models_proto: dict[str, Any],
     scaler: StandardScaler,
-) -> tuple[dict[str, float], dict[str, list[float]], pd.DataFrame]:
+) -> tuple[dict[str, float], dict[str, list[float]], dict[str, list[float]], pd.DataFrame]:
     """Validación cruzada espacial leave-one-block-out.
 
-    Para cada fold k: entrena con k!=fold, predice fold k, calcula TSS.
+    Para cada fold k: entrena con k!=fold, predice fold k, calcula TSS y AUC.
 
     Parámetros
     ----------
@@ -257,7 +258,8 @@ def _spatial_cv(
     Retorna
     -------
     cv_tss : TSS medio por algoritmo
-    cv_tss_per_fold : TSS por fold y algoritmo (para diagnóstico)
+    tss_per_fold : TSS por fold y algoritmo
+    auc_per_fold : AUC-ROC por fold y algoritmo
     oof_preds : DataFrame con predicciones out-of-fold
     """
     folds = sorted(df["cv_fold"].unique())
@@ -266,6 +268,7 @@ def _spatial_cv(
 
     # Acumuladores
     tss_per_fold: dict[str, list[float]] = {algo: [] for algo in models_proto}
+    auc_per_fold: dict[str, list[float]] = {algo: [] for algo in models_proto}
     # OOF predictions: index alineado con df
     oof: dict[str, np.ndarray] = {algo: np.full(len(df), np.nan) for algo in models_proto}
     idx_all = np.arange(len(df))
@@ -301,6 +304,11 @@ def _spatial_cv(
                 proba = _predict_proba(model_fold, X_te_s, algo)
                 tss, _ = _tss_youden(y_te, proba)
                 tss_per_fold[algo].append(tss)
+                try:
+                    auc_fold = float(roc_auc_score(y_te, proba))
+                except Exception:
+                    auc_fold = float("nan")
+                auc_per_fold[algo].append(auc_fold)
                 oof[algo][idx_all[mask_test]] = proba
             except Exception as exc:
                 logger.warning(
@@ -323,7 +331,7 @@ def _spatial_cv(
     for algo in models_proto:
         oof_df[algo] = oof[algo]
 
-    return cv_tss, tss_per_fold, oof_df
+    return cv_tss, tss_per_fold, auc_per_fold, oof_df
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +529,7 @@ def process_species(slug: str, especie: str) -> bool:
     logger.info("Iniciando spatial CV leave-one-block-out...")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        cv_tss, cv_tss_per_fold, oof_df = _spatial_cv(
+        cv_tss, cv_tss_per_fold, cv_auc_per_fold, oof_df = _spatial_cv(
             df, selected_predictors, models_proto, scaler
         )
 
@@ -596,14 +604,25 @@ def process_species(slug: str, especie: str) -> bool:
     # ------------------------------------------------------------------
     utils.ensure_dirs(config.ENSEMBLE_MODELS)
 
+    # train_env: DataFrame con columnas == selected_predictors, una fila por
+    # registro de entrenamiento (presencias + background). Referencia para MESS.
+    train_env_df = df[selected_predictors].copy()
+
+    # scaled_algos: lista de algoritmos que reciben input escalado
+    scaled_algos: list[str] = [a for a in fitted_models if a in _NEEDS_SCALING]
+
     result: dict[str, Any] = {
         "especie": especie,
         "selected_predictors": selected_predictors,
         "scaler": scaler,
+        "scaled_algos": scaled_algos,
         "models": fitted_models,
         "cv_tss": cv_tss,
+        "tss_per_fold": cv_tss_per_fold,
+        "auc_per_fold": cv_auc_per_fold,
         "tss_weights": tss_weights,
         "thresholds": thresholds,
+        "train_env": train_env_df,
     }
 
     out_path = config.ENSEMBLE_MODELS / f"{slug}.joblib"

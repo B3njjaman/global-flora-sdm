@@ -725,8 +725,34 @@ def main() -> None:
     rng = np.random.default_rng(config.RANDOM_SEED)
 
     # -- Determinar especies a procesar --
-    counts = utils.species_counts()
-    modelable = config.modelable_species(counts)
+    # Se usa la columna 'grupo' del GPKG limpio (clasificación POST-thinning).
+    # NO se usa config.modelable_species(utils.species_counts()) porque ese
+    # método aplica conteos crudos pre-thinning; tras el thinning varias
+    # especies pueden caer < 50 registros y ser reclasificadas a grupo C.
+    if not config.OCCURRENCES_CLEAN.exists():
+        logger.error(
+            "Archivo de ocurrencias limpias no encontrado: %s. "
+            "Ejecuta primero 01_limpieza.py.",
+            config.OCCURRENCES_CLEAN,
+        )
+        sys.exit(1)
+
+    _gdf_grupos = gpd.read_file(config.OCCURRENCES_CLEAN)
+    if "grupo" not in _gdf_grupos.columns:
+        logger.error(
+            "La columna 'grupo' no existe en %s. "
+            "Verifica que 01_limpieza.py escribe esa columna.",
+            config.OCCURRENCES_CLEAN,
+        )
+        sys.exit(1)
+    _especies_ab = (
+        _gdf_grupos[_gdf_grupos["grupo"].isin(["A", "B"])]["especie"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    modelable = sorted(_especies_ab)
+    logger.info("Especies modelables (grupo A+B, post-thinning): %d", len(modelable))
 
     if args.species is not None:
         if args.species not in modelable:
@@ -742,17 +768,9 @@ def main() -> None:
 
     logger.info("Especies a procesar (%d): %s", len(species_list), species_list)
 
-    # -- Cargar ocurrencias limpias --
-    if not config.OCCURRENCES_CLEAN.exists():
-        logger.error(
-            "Archivo de ocurrencias limpias no encontrado: %s. "
-            "Ejecuta primero 01_limpieza.py.",
-            config.OCCURRENCES_CLEAN,
-        )
-        sys.exit(1)
-
+    # -- Cargar ocurrencias limpias (ya leídas arriba para obtener grupos) --
     logger.info("Cargando ocurrencias limpias desde %s…", config.OCCURRENCES_CLEAN)
-    gdf_all = gpd.read_file(config.OCCURRENCES_CLEAN)
+    gdf_all = _gdf_grupos  # reutilizar el GeoDataFrame ya cargado
     logger.info("  Total registros cargados: %d", len(gdf_all))
 
     # Validar columnas esenciales

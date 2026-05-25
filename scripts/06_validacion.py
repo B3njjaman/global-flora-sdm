@@ -27,21 +27,23 @@ Formato esperado del artefacto .joblib
 El joblib guardado por 05_modelado.py debe ser un dict con al menos:
 
     {
-        "models":     {"glm": <estimador>, "gam": ..., "rf": ..., "gbm": ..., "maxent": ...},
-        "weights":    {"glm": 0.3, ...},          # pesos TSS del CV (pueden ser iguales)
-        "predictors": ["bio1", "bio4", ...],       # lista de columnas predictoras
-        "thresholds": {                            # OPCIONAL — calculado aquí si ausente
+        "models":            {"glm": <estimador>, "gam": ..., "rf": ..., "gbm": ..., "maxent": ...},
+        "tss_weights":       {"glm": 0.3, ...},        # pesos TSS del CV
+        "selected_predictors": ["bio1", "bio4", ...],  # lista de columnas predictoras
+        "scaled_algos":      ["glm", "gam", "maxent"], # algoritmos que reciben input escalado
+        "scaler":            <StandardScaler ajustado>,
+        "thresholds": {
             "maxTSS": 0.42,
             "p10":    0.18,
+            "min_train": 0.05,
         },
-        "tss_per_fold": {                          # OPCIONAL — métricas por fold de CV
+        "tss_per_fold": {          # TSS por fold de CV
             "glm":  [0.61, 0.55, ...],
-            "ensemble": [0.68, 0.70, ...],
         },
-        "auc_per_fold": {
+        "auc_per_fold": {          # AUC-ROC por fold de CV
             "glm":  [0.82, 0.79, ...],
-            "ensemble": [0.85, 0.83, ...],
         },
+        "train_env":  <pandas.DataFrame con columnas == selected_predictors>,
     }
 
 Si alguna clave opcional falta, el script la calcula desde cv_preds.parquet
@@ -49,18 +51,18 @@ Si alguna clave opcional falta, el script la calcula desde cv_preds.parquet
 
 Columnas esperadas en <slug>.parquet
 --------------------------------------
-  - presencia     : int  (1 = presencia, 0 = background)
+  - presence      : int  (1 = presencia, 0 = background)
   - <predictores> : float
-  - fold          : int  (bloque CV, opcional)
+  - cv_fold       : int  (bloque CV)
   - lon, lat      : float (opcional, para variabilidad regional)
   - pais / region : str  (opcional)
 
 Columnas esperadas en <slug>_cv_preds.parquet
 ----------------------------------------------
-  - presencia  : int
-  - fold       : int
-  - pred_glm, pred_gam, pred_rf, pred_gbm, pred_maxent : float  (probabilidades OOF)
-  - pred_ensemble : float
+  - presence  : int
+  - cv_fold   : int
+  - glm, gam, rf, gbm, maxent : float  (probabilidades OOF por algoritmo)
+  - ensemble  : float
 
 Funciones públicas reutilizables (importadas por Etapas 7/8)
 -------------------------------------------------------------
@@ -98,8 +100,8 @@ logger = utils.get_logger("06_validacion")
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
-ALGORITHM_COLS = ["pred_glm", "pred_gam", "pred_rf", "pred_gbm", "pred_maxent"]
-ENSEMBLE_COL = "pred_ensemble"
+ALGORITHM_COLS = ["glm", "gam", "rf", "gbm", "maxent"]
+ENSEMBLE_COL = "ensemble"
 
 
 # ===========================================================================
@@ -516,18 +518,18 @@ def compute_spatial_cv_metrics(
     y ensemble.
     """
     metrics: dict[str, float] = {}
-    folds = cv_preds["fold"].unique()
+    folds = cv_preds["cv_fold"].unique()
 
     algo_cols = [c for c in ALGORITHM_COLS if c in cv_preds.columns]
     all_cols = algo_cols + ([ENSEMBLE_COL] if ENSEMBLE_COL in cv_preds.columns else [])
 
     for col in all_cols:
-        key = col.replace("pred_", "")
+        key = col  # column names are already the algorithm names (no 'pred_' prefix)
         tss_folds = []
         auc_folds = []
         for fold in folds:
-            fold_df = cv_preds[cv_preds["fold"] == fold]
-            yt = fold_df["presencia"].values
+            fold_df = cv_preds[cv_preds["cv_fold"] == fold]
+            yt = fold_df["presence"].values
             yp = fold_df[col].values
 
             # Necesitamos al menos ambas clases por fold
@@ -569,7 +571,7 @@ def compute_regional_variability(
 
     rows = []
     for region, grp in cv_preds.groupby(region_col):
-        yt = grp["presencia"].values
+        yt = grp["presence"].values
         yp = grp[ENSEMBLE_COL].values
         if len(np.unique(yt)) < 2 or len(yt) < 10:
             continue
@@ -838,12 +840,12 @@ def validate_species(slug: str) -> dict[str, Any]:
         row["status"] = "error_dataset"
         return row
 
-    if "presencia" not in df.columns:
-        logger.error("Columna 'presencia' no encontrada en %s.parquet", slug)
+    if "presence" not in df.columns:
+        logger.error("Columna 'presence' no encontrada en %s.parquet", slug)
         row["status"] = "error_columna_presencia"
         return row
 
-    y_all = df["presencia"].values.astype(int)
+    y_all = df["presence"].values.astype(int)
     n_pres = int((y_all == 1).sum())
     n_bg = int((y_all == 0).sum())
     row["n_presencias"] = n_pres
@@ -872,7 +874,7 @@ def validate_species(slug: str) -> dict[str, Any]:
 
     # Si tenemos cv_preds, usarlas como base de discriminación/calibración
     if has_cv:
-        y_oof = cv_preds["presencia"].values.astype(int)
+        y_oof = cv_preds["presence"].values.astype(int)
         y_prob_ens = cv_preds[ENSEMBLE_COL].values.astype(float)
     else:
         # Fallback: predecir sobre el dataset completo con el ensemble (NO recomendado,
@@ -984,7 +986,7 @@ def validate_species(slug: str) -> dict[str, Any]:
     # -----------------------------------------------------------------
     # 8. Robustez espacial (media ± SD entre folds)
     # -----------------------------------------------------------------
-    if has_cv and "fold" in cv_preds.columns:
+    if has_cv and "cv_fold" in cv_preds.columns:
         logger.info("  Calculando robustez espacial por fold...")
         cv_metrics = compute_spatial_cv_metrics(cv_preds, thr_maxtss)
         for k, v in cv_metrics.items():
@@ -1005,7 +1007,7 @@ def validate_species(slug: str) -> dict[str, Any]:
                 row.get("tss_ensemble_std", np.nan),
             )
     else:
-        logger.info("  cv_preds sin columna 'fold'; robustez espacial omitida.")
+        logger.info("  cv_preds sin columna 'cv_fold'; robustez espacial omitida.")
 
         # Intentar leer métricas por fold del artefacto (guardadas por 05_modelado.py)
         if "tss_per_fold" in artifact:
@@ -1024,7 +1026,7 @@ def validate_species(slug: str) -> dict[str, Any]:
     # 9. Extrapolación: MESS
     # -----------------------------------------------------------------
     logger.info("  Calculando MESS...")
-    pres_df = df[df["presencia"] == 1]
+    pres_df = df[df["presence"] == 1]
     mess_metrics = compute_mess_metrics(pres_df, df, predictors)
     for k, v in mess_metrics.items():
         row[f"mess_{k}"] = v
@@ -1065,14 +1067,16 @@ def _predict_with_artifact(
 
     Solo se usa como fallback cuando no hay cv_preds.
     """
-    if not artifact or "models" not in artifact or "weights" not in artifact:
+    if not artifact or "models" not in artifact or "tss_weights" not in artifact:
         return None
 
     models = artifact["models"]
-    weights = artifact["weights"]
+    weights = artifact["tss_weights"]
+    scaler = artifact.get("scaler")
+    scaled_algos: list[str] = artifact.get("scaled_algos", [])
 
     # Usar predictores del artefacto si están disponibles
-    art_predictors = artifact.get("predictors", predictors)
+    art_predictors = artifact.get("selected_predictors", predictors)
     avail = [p for p in art_predictors if p in df.columns]
     if not avail:
         logger.warning("  _predict_with_artifact: ningún predictor disponible en el DataFrame.")
@@ -1087,10 +1091,15 @@ def _predict_with_artifact(
         if w <= 0:
             continue
         try:
+            X_input = (
+                scaler.transform(X)
+                if (algo_name in scaled_algos and scaler is not None)
+                else X
+            )
             if hasattr(model, "predict_proba"):
-                prob = model.predict_proba(X)[:, 1]
+                prob = model.predict_proba(X_input)[:, 1]
             elif hasattr(model, "predict"):
-                prob = model.predict(X).astype(float)
+                prob = model.predict(X_input).astype(float)
                 prob = np.clip(prob, 0.0, 1.0)
             else:
                 logger.warning("  Modelo %s sin método predict_proba/predict.", algo_name)

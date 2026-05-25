@@ -39,6 +39,7 @@ from typing import Optional
 import numpy as np
 import rioxarray  # noqa: F401  — activa el accessor .rio en xarray
 import xarray as xr
+from rasterio.enums import Resampling
 
 import config
 import utils
@@ -359,7 +360,7 @@ def align_bioclim_layers(
         da = _load_raster(tif_path, name=var)
         da_aligned = da.rio.reproject_match(
             reference,
-            resampling=rioxarray.enums.Resampling.bilinear,
+            resampling=Resampling.bilinear,
         )
         da_aligned.name = var
         aligned[var] = da_aligned.astype(np.float32)
@@ -595,7 +596,7 @@ def main() -> None:
     for tvar, da in topo_raw.items():
         da_aligned = da.rio.reproject_match(
             reference_grid,
-            resampling=rioxarray.enums.Resampling.bilinear,
+            resampling=Resampling.bilinear,
         )
         da_aligned.name = tvar
         topo_aligned[tvar] = da_aligned.astype(np.float32)
@@ -623,7 +624,7 @@ def main() -> None:
     mask_da = _load_raster(mask_path, name="land_mask")
     mask_aligned = mask_da.rio.reproject_match(
         reference_grid,
-        resampling=rioxarray.enums.Resampling.nearest,  # máscara categórica: vecino más cercano
+        resampling=Resampling.nearest,  # máscara categórica: vecino más cercano
     )
     all_layers_masked = apply_land_mask(all_layers, mask=mask_aligned)
 
