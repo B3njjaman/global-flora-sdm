@@ -197,10 +197,82 @@ def _derive_terrain_richdem(
     return slope_deg, aspect_deg
 
 
+def _derive_terrain_geographic(
+    elevation: xr.DataArray,
+) -> tuple[xr.DataArray, xr.DataArray]:
+    """Deriva pendiente y aspecto (grados) con Horn (1981) sobre grilla geográfica.
+
+    POR QUÉ NO xrspatial/richdem directamente: ambos asumen que las coordenadas
+    X/Y están en METROS (CRS proyectado). Aquí la grilla está en EPSG:4326
+    (GRADOS) y la elevación en METROS, así que el gradiente dz/dx sale gigantesco
+    (m / grado) y atan(gigante) ≈ 90° en casi todo el planeta (bug histórico:
+    slope ~90° en el 99% de la Tierra). La corrección convierte el tamaño de
+    celda a metros con escala dependiente de la latitud:
+
+        m_por_grado_lat ≈ 111320
+        m_por_grado_lon ≈ 111320 · cos(lat)
+
+    Parameters
+    ----------
+    elevation:
+        DataArray de elevación en metros (EPSG:4326), nodata = NaN.
+
+    Returns
+    -------
+    slope_deg : xr.DataArray  — pendiente [0, 90] grados.
+    aspect_deg : xr.DataArray — aspecto [0, 360) grados (norte=0, horario);
+        terreno plano → NaN.
+    """
+    elev = elevation.values.astype(np.float32)
+    ny, nx = elev.shape
+    ys = np.asarray(elevation["y"].values, dtype=np.float64)
+    xs = np.asarray(elevation["x"].values, dtype=np.float64)
+    res_x_deg = abs(float(xs[1] - xs[0])) if nx > 1 else 2.5 / 60
+    res_y_deg = abs(float(ys[1] - ys[0])) if ny > 1 else 2.5 / 60
+
+    pad = np.pad(elev, 1, mode="edge")
+    a = pad[0:ny, 0:nx];     b = pad[0:ny, 1:nx + 1];     c = pad[0:ny, 2:nx + 2]
+    d = pad[1:ny + 1, 0:nx]; center = pad[1:ny + 1, 1:nx + 1]; f = pad[1:ny + 1, 2:nx + 2]
+    g = pad[2:ny + 2, 0:nx]; h = pad[2:ny + 2, 1:nx + 1]; i = pad[2:ny + 2, 2:nx + 2]
+    del pad
+
+    def fill(x: np.ndarray) -> np.ndarray:
+        return np.where(np.isnan(x), center, x)
+
+    a, b, c, d, f, g, h, i = (fill(v) for v in (a, b, c, d, f, g, h, i))
+
+    M = 111_320.0
+    csx = (res_x_deg * M * np.cos(np.deg2rad(ys)))[:, None]
+    csx = np.where(np.abs(csx) < 1.0, np.nan, csx)  # polos: indefinido
+    csy = res_y_deg * M
+
+    dzdx = ((c + 2 * f + i) - (a + 2 * d + g)) / (8 * csx)
+    dzdy = ((g + 2 * h + i) - (a + 2 * b + c)) / (8 * csy)
+
+    slope_np = np.degrees(np.arctan(np.sqrt(dzdx ** 2 + dzdy ** 2)))
+    flat = (dzdx == 0) & (dzdy == 0)
+    slope_np = np.where(np.isnan(center), np.nan, slope_np).astype(np.float32)
+
+    # Aspecto convención ESRI/GDAL (norte=0, horario); plano → NaN
+    aspect_np = np.degrees(np.arctan2(dzdy, -dzdx))
+    aspect_np = np.where(aspect_np < 0, 90.0 - aspect_np,
+                         np.where(aspect_np > 90.0, 450.0 - aspect_np, 90.0 - aspect_np))
+    aspect_np = np.where(flat | np.isnan(center), np.nan, aspect_np).astype(np.float32)
+
+    slope_deg = elevation.copy(data=slope_np); slope_deg.name = "slope"
+    aspect_deg = elevation.copy(data=aspect_np); aspect_deg.name = "aspect"
+    logger.info("Terreno derivado con Horn geográfico (escala métrica por latitud).")
+    return slope_deg, aspect_deg
+
+
 def derive_terrain(
     elevation: xr.DataArray,
 ) -> tuple[xr.DataArray, xr.DataArray]:
-    """Punto de entrada para derivación de terreno: intenta xarray-spatial, luego richdem.
+    """Punto de entrada para derivación de terreno.
+
+    Usa el cálculo geográfico correcto (Horn con escala métrica dependiente de
+    latitud). NO usa xrspatial/richdem en modo directo porque asumen coordenadas
+    proyectadas en metros y producen pendiente ~90° sobre grillas en grados.
 
     Parameters
     ----------
@@ -211,26 +283,8 @@ def derive_terrain(
     -------
     slope_deg, aspect_deg : xr.DataArray
         Pendiente y aspecto en grados.
-
-    Raises
-    ------
-    ImportError
-        Si ninguna de las dos librerías (xarray-spatial, richdem) está disponible.
     """
-    try:
-        return _derive_terrain_xarray_spatial(elevation)
-    except ImportError:
-        logger.warning(
-            "xarray-spatial no está disponible; intentando richdem como alternativa."
-        )
-
-    try:
-        return _derive_terrain_richdem(elevation)
-    except ImportError as exc:
-        raise ImportError(
-            "Se necesita xarray-spatial o richdem para derivar terreno. "
-            "Instalar con: pip install xarray-spatial  o  pip install richdem"
-        ) from exc
+    return _derive_terrain_geographic(elevation)
 
 
 # ---------------------------------------------------------------------------
