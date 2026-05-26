@@ -3,6 +3,7 @@ data/raw/worldclim_present/*
 data/raw/worldclim_future/*
 data/processed/rasters_aligned/*
 data/processed/species_datasets/*
+data/processed/Especies_sudamerica.csv
 data/modeling/ensemble_models/*
 data/raw/natural_earth/
 !**/.gitkeep
