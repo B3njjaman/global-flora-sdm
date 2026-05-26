@@ -1,242 +1,217 @@
 # Flujo de trabajo — Versión 4 (reconstrucción modular)
 
-> **Propósito.** Documentar, etapa por etapa, **cómo trabaja el código** para auditarlo
-> uno por uno antes de reconstruirlo de forma modular. Misma lógica y mismo modelo que
-> la iteración 3.1, pero (a) **alcance Sudamérica** (no solo Chile) desde la limpieza, y
-> (b) estructura **modular**.
+> **Propósito.** Inventario de **los pasos que ejecuta cada script**, en el orden real del
+> código. Esta es la unidad sobre la que iremos trabajando: **cada paso es algo que podemos
+> mantener, modificar o eliminar** al reconstruir de forma modular. Misma lógica y mismo
+> modelo que la iteración 3.1, con dos cambios de fondo: **alcance Sudamérica** (no solo
+> Chile) y **estructura modular**.
 >
 > - **Rama:** `version-4`
 > - **Dataset original (única fuente de verdad):** `gbif_distribucion_especies.xlsx`
 >   (hoja `Registros GBIF`) — 13.354 registros, 21 especies, 15 columnas.
-> - **Estado de este documento:** Etapa 1 (limpieza) detallada. Las etapas 2–8 se irán
->   añadiendo a medida que se auditen.
 >
-> Convención: 🔴 **DECISIÓN DE AUDITORÍA** marca un punto donde tú decides antes de que
-> yo escriba código.
+> **Leyenda de cada paso:**
+> - (sin marca) = se mantiene igual que en 3.1.
+> - ⟳ **V4** = paso que cambia en esta versión.
+> - ★ **NUEVO** = paso que no existe en 3.1 y se agrega.
+> - 🔴 = decisión de auditoría pendiente (tú decides antes de tocar código).
+>
+> **Estado:** Etapa 01 lista para implementar; 02–08 inventariadas para auditar en orden.
 
 ---
 
-## 0. Mapa general del pipeline (8 etapas)
-
-Cada etapa consume las salidas de la anterior. El cambio de alcance (Chile → Sudamérica)
-afecta sobre todo a las etapas **1** (limpieza), **4** (background/calibración) y **7**
-(predicción/mapa).
+## Secuencia y artefactos (resumen)
 
 ```
-gbif_distribucion_especies.xlsx
-        │
-        ▼
-[01] LIMPIEZA  ───────────────►  ocurrencias_limpias.gpkg
-        │   dedup · incertidumbre · coords inválidas · ★FILTRO SUDAMÉRICA★
-        │   · centroides admin · océano · thinning · grupos A/B/C
-        ▼
-[02] CAPAS PRESENTE (WorldClim) ─►  worldclim_present/  (bioclim + elevación + máscara)
-        ▼
-[03] TERRENO  ──────────────────►  rasters_aligned/  (14 predictoras alineadas)
-        │   slope (Horn geográfico) · aspect → northness/eastness
-        ▼
-[04] EXTRACCIÓN  ───────────────►  species_datasets/*.parquet (+ _predictors.json)
-        │   extrae predictoras en presencias · background (área de calibración)
-        │   · colinealidad (VIF/corr) · folds CV espacial adaptativo
-        ▼
-[05] MODELADO (ensemble) ───────►  ensemble_models/*.joblib (+ _cv_preds.parquet)
-        │   GLM · GAM · RF · GBM · MaxEnt → equal-weight (TSS≥0.5)
-        ▼
-[06] VALIDACIÓN  ───────────────►  outputs/tables/metrics_*.csv
-        │   TSS · AUC · Boyce · Brier · MESS · SD folds/algos
-        ▼
-[07] IDONEIDAD PRESENTE ────────►  outputs/maps/*_present_suitability.tif
-        │   (recortada al área de predicción)
-        │   [07_forecast_2050.py → diferido]
-        ▼
-[08] MAPAS / FIGURAS ───────────►  outputs/figures/*.png
+xlsx → [01] → ocurrencias_limpias.gpkg → [04] → species_datasets/*.parquet → [05] → ensemble_models/*.joblib
+              [02] → worldclim_present/ → [03] → rasters_aligned/  ┘                          │
+                                                                                              ├→ [06] → tables/metrics_*.csv
+                                                                                              ├→ [07b] → maps/*_present.tif → [08] → figures/*.png
+                                                                                              └→ [07] → forecast 2050 (DIFERIDO)
 ```
-
-**Lo que cambia en V4 respecto a iter. 3.1:**
-
-| Etapa | Iter. 3.1 (Chile) | V4 (Sudamérica) |
-|---|---|---|
-| 01 Limpieza | sin filtro geográfico (limpia global) | **filtra a Sudamérica** según el dataset |
-| 04 Extracción | background + presencias recortados a **Chile** | área de calibración = **Sudamérica** (🔴 a confirmar) |
-| 07 Predicción | mapa recortado a Sudamérica | igual (Sudamérica) |
 
 ---
 
-## 1. ETAPA 01 — Limpieza de ocurrencias
+## [01] `01_limpieza.py` — limpieza de ocurrencias
 
-### 1.1 Contrato (entrada → salida)
+**Entrada:** `gbif_distribucion_especies.xlsx` (hoja `Registros GBIF`) · **Salida:**
+`data/processed/ocurrencias_limpias.gpkg` (capa `ocurrencias`, EPSG:4326).
+Pasos en el orden real de `main()`:
 
-| | Detalle |
-|---|---|
-| **Entrada** | `gbif_distribucion_especies.xlsx`, hoja `Registros GBIF` (13.354 × 15). |
-| **Salida** | `data/processed/ocurrencias_limpias.gpkg`, capa `ocurrencias`, CRS EPSG:4326. |
-| **Columnas mínimas de salida** | `especie, grupo, lon, lat, ano, pais, geometry` (+ metadatos: nombre_cientifico, incertidumbre_m, region, localidad, fecha, tipo_registro, institucion, dataset, catalogo, gbif_id). |
+| # | Paso (función) | Qué hace | V4 |
+|---|---|---|---|
+| 0 | `construir_geodataframe` | Carga el xlsx (`utils.load_raw_occurrences`), renombra columnas a snake_case, descarta lat/lon nulas, crea geometría `Point` EPSG:4326. | |
+| 1 | `eliminar_duplicados` | dedup exacto por `(especie, lat, lon)`, conserva el primero. | |
+| 2 | `filtrar_incertidumbre` | descarta `incertidumbre_m > 10.000` m; los NaN se conservan. | |
+| 3 | `filtrar_coords_sospechosas` | elimina NaN, `(0,0)`, fuera de rango (\|lat\|>90/\|lon\|>180) y coords con lat **y** lon de decimal `.0` (truncadas). | |
+| **3b** | **`filtrar_sudamerica`** | **conserva solo registros dentro de Sudamérica** (13.354 → ~8.498). Se inserta aquí, antes de los pasos caros. | ★ **NUEVO** |
+| 4 | `filtrar_centroides_admin` | descarta puntos a ≤1 km de centroides de país/provincia (Natural Earth admin-0/1). Paso más caro. | |
+| 5 | `filtrar_oceano` | descarta puntos fuera de la land mask (Natural Earth), `sjoin within`. | |
+| 6 | `thinning_espacial` | 1 punto por celda 2.5′ (1/24°) por especie; prefiere menor incertidumbre. (El paso que más reduce el n.) | |
+| 7 | `asignar_grupos` | clasifica A/B/C (`config.classify_species`) sobre conteos **post-thinning**; C se marca pero no se descarta. | ⟳ **V4**: recalcular sobre conteos de Sudamérica (cambia el set modelable). |
+| 8 | `_reportar_por_especie` + guardar | tabla inicial→final por especie y escribe el `.gpkg`. | |
 
-**Carga y normalización de columnas** (`utils.load_raw_occurrences`): el `.xlsx` se lee y
-se renombran las columnas a snake_case ASCII estable:
+**Detalle del paso ★ 3b (filtro Sudamérica).** Dos métodos posibles — verifiqué contra el
+dataset que dan **exactamente los mismos 8.498 registros** (coincidencia 100%, 0
+discrepancias):
+- **por geometría:** punto dentro del polígono / bbox de Sudamérica (`config.PREDICTION_BBOX`).
+- **por país:** columna `pais` ∈ {Chile, Colombia, Bolivia, Perú, Argentina, Brasil, Ecuador, Paraguay, …}.
 
-```
-Especie → especie · Nombre cientifico GBIF → nombre_cientifico · Latitud → lat
-Longitud → lon · Incertidumbre (m) → incertidumbre_m · Pais → pais
-Region / Estado → region · ... · GBIF ID → gbif_id
-```
+🔴 **Decisión A — método del filtro 3b.** Recomiendo **por geometría** (el resto del
+pipeline es coordenada-dependiente y es robusto ante etiquetas de país ausentes/erróneas).
+"Por país" es igual de válido hoy. → *Determina cómo escribo el paso 3b.*
 
-### 1.2 Flujo de pasos (orden REAL de ejecución en `main()`)
+**Efecto del paso 7 en V4 (set de especies modelables).** Ampliar a Sudamérica suma
+candidatas que con "solo Chile" quedaban fuera: **Nolana albescens** (365 reg. en SA),
+posiblemente **Dinemagonum gayanum** (65) y **Nolana rostrata** (60); y da más datos a
+*Schinus areira* (72 → 1.135 crudos). *Atriplex semibaccata* sigue bajo el piso de 50 (48 en
+SA). El grupo A/B/C debe recalcularse sobre SA post-thinning, no heredarse.
 
-> Nota: el docstring numera los pasos 1–7 en otro orden; este es el **orden real** en que
-> se ejecutan. El nº entre paréntesis es la numeración del docstring.
-
-```
-construir_geodataframe   (descarta lat/lon nulas, crea Point, EPSG:4326)
-  │
-  ├─[A] eliminar_duplicados        (paso 1)  dedup exacto (especie, lat, lon)
-  ├─[B] filtrar_incertidumbre      (paso 2)  descarta incertidumbre_m > 10.000 m (NaN se conserva)
-  ├─[C] filtrar_coords_sospechosas (paso 5)  (0,0) · |lat|>90 / |lon|>180 · decimales .0 · NaN
-  ├─[★] FILTRO SUDAMÉRICA          (NUEVO)   ← se inserta aquí (ver §1.3)
-  ├─[D] filtrar_centroides_admin   (paso 3)  elimina puntos a ≤1 km de centroides país/región (Natural Earth)
-  ├─[E] filtrar_oceano             (paso 4)  descarta puntos fuera de la land mask (Natural Earth)
-  ├─[F] thinning_espacial          (paso 6)  1 punto por celda 2.5′ (1/24°) por especie
-  └─[G] asignar_grupos             (paso 7)  grupo A/B/C según conteos POST-thinning
-  │
-  ▼
-_reportar_por_especie  →  guardar .gpkg
-```
-
-**Detalle de cada paso:**
-
-- **[A] Duplicados** — `drop_duplicates(["especie","lat","lon"], keep="first")`.
-- **[B] Incertidumbre** — descarta `incertidumbre_m > config.MAX_COORD_UNCERTAINTY_M`
-  (10.000 m, coherente con la celda de ~5 km). Los registros **sin** incertidumbre (NaN)
-  se conservan (son mayoría en GBIF).
-- **[C] Coords sospechosas** — elimina: NaN, `(0,0)` exacto, fuera de rango, y registros
-  con **lat y lon ambas con decimal .0** (truncadas a entero → baja precisión).
-- **[D] Centroides administrativos** — calcula la distancia geodésica de cada punto a los
-  centroides de países (admin-0, 110m) y provincias (admin-1, 10m) de Natural Earth; si
-  cae a ≤ `config.CENTROID_TOLERANCE_KM` (1 km) se descarta (artefacto de geocoding). Es
-  el paso **más caro** (O(n × nº centroides) geodésicas). Si no hay capas NE, se omite con
-  aviso.
-- **[E] Océano** — `sjoin` `within` contra la unión de polígonos de tierra de Natural
-  Earth; descarta puntos en mar. Si no hay capa, se omite con aviso.
-- **[F] Thinning espacial** — asigna cada punto a su celda de la grilla 2.5′ y conserva
-  **1 punto por (especie, celda)**, prefiriendo el de menor incertidumbre. Reduce el sesgo
-  de sobre-muestreo. **Es el paso que más reduce el n** (en iter. 1: 13.354 → 4.566 global).
-- **[G] Grupos A/B/C** — `config.classify_species` sobre los conteos **después** del
-  thinning: `C` si n < 50; `A` si está en la lista de cosmopolitas/introducidas con n
-  suficiente; `B` resto (endémicas con datos). El grupo C se marca pero **no se descarta**
-  del `.gpkg` (se excluye en modelado).
-
-### 1.3 ★ NUEVO PASO: filtro Sudamérica
-
-**Qué.** Conservar solo registros dentro de Sudamérica. Es el cambio central de V4 en esta
-etapa.
-
-**Dónde.** Insertado **después de [C] coords sospechosas y antes de [D] centroides**.
-Motivo: reduce el dataset (13.354 → ~8.498, −36%) *antes* de los pasos caros (centroides y
-océano), así que acelera el resto y todo lo posterior opera solo sobre Sudamérica.
-
-**Cómo — dos métodos posibles (en este dataset son EQUIVALENTES):**
-
-| Método | Criterio | Resultado en este dataset |
-|---|---|---|
-| **Por geometría** | punto dentro del polígono / bbox de Sudamérica (`config.PREDICTION_BBOX = (-82, -56, -34, 13)`) | 8.498 registros |
-| **Por país** | columna `pais` ∈ {Chile, Colombia, Bolivia, Perú, Argentina, Brasil, Ecuador, Paraguay, …} | 8.498 registros |
-
-> **Verificado contra el dataset:** ambos métodos seleccionan **exactamente los mismos
-> 8.498 registros** (coincidencia 100%, 0 discrepancias). No hay registros "país-SA fuera
-> del bbox" ni "en bbox con país no-SA".
-
-🔴 **DECISIÓN DE AUDITORÍA 1 — método del filtro.** Como dan el mismo resultado, recomiendo
-**por geometría** (polígono Natural Earth de Sudamérica, con `PREDICTION_BBOX` de respaldo),
-porque: (a) el resto del pipeline es coordenada-dependiente, no usa el país; (b) es robusto
-ante etiquetas de país ausentes o erróneas en descargas futuras; (c) reutiliza la lógica ya
-existente de máscara en la etapa 04 (`_load_calibration_mask`). El criterio "por país" es
-igual de válido hoy y literalmente "según el dataset"; queda como alternativa si lo
-prefieres.
-
-### 1.4 Implicación clave: cambia el set de especies modelables
-
-Con alcance Sudamérica (más amplio que Chile), los conteos por especie cambian y, por tanto,
-la clasificación A/B/C. **Conteos crudos por especie dentro de Sudamérica** (antes de
-limpieza/thinning; el thinning los reducirá ~½):
-
-| Especie | total | en Sudamérica | ¿modelable en Chile (3.1)? | ¿candidata en V4? |
-|---|--:|--:|:--:|:--:|
-| Nolana divaricata | 3000 | 3000 | sí | sí |
-| Schinus areira | 3000 | 1135 | sí (n=72 Chile) | sí (más datos) |
-| Encelia canescens | 708 | 708 | sí | sí |
-| Nolana sedifolia | 431 | 431 | sí | sí |
-| Krameria cistoidea | 409 | 408 | sí | sí |
-| Eulychnia acida | 375 | 375 | sí | sí |
-| **Nolana albescens** | 365 | 365 | **no (fuera de scope)** | **sí (NUEVA)** |
-| Cumulopuntia sphaerica | 302 | 302 | sí | sí |
-| Neltuma chilensis | 296 | 262 | sí | sí |
-| Oxalis gigantea | 294 | 293 | sí | sí |
-| Skytanthus acutus | 294 | 294 | sí | sí |
-| Miqueliopuntia miquelii | 288 | 287 | sí | sí |
-| Senna cumingii | 204 | 204 | sí | sí |
-| Pleurophora pungens | 144 | 144 | sí | sí |
-| **Dinemagonum gayanum** | 65 | 65 | **no** | **sí (NUEVA, revisar tras thinning)** |
-| **Nolana rostrata** | 62 | 60 | **no** | **posible (cerca del piso de 50)** |
-| **Atriplex semibaccata** | 3000 | **48** | no (n=8 Chile) | **no (sigue < 50)** |
-| Atriplex deserticola | 44 | 44 | no | no (< 50) |
-| Aloysia salviifolia | 39 | 39 | no | no |
-| Caesalpinia angulata | 28 | 28 | no | no |
-| Centaurea chilensis | 6 | 6 | no | no |
-
-**Lectura:** ampliar a Sudamérica **suma especies modelables** (al menos *Nolana
-albescens*; posiblemente *Dinemagonum gayanum* y *Nolana rostrata* según queden tras el
-thinning) y **da más datos** a *Schinus areira*. *Atriplex semibaccata* sigue por debajo
-del piso de 50 incluso en Sudamérica (48 crudos → quedará excluida igual). La clasificación
-A/B/C debe **recalcularse sobre los conteos de Sudamérica post-thinning**, no heredarse de
-3.1.
-
-🔴 **DECISIÓN DE AUDITORÍA 2 — área de calibración.** En 3.1 la etapa 04 recorta el
-background y las presencias a **Chile**. Si el alcance es ahora Sudamérica, hay que decidir:
-- **(a) Calibrar en toda Sudamérica:** usar todas las presencias SA + background en SA.
-  Aprovecha Colombia/Bolivia/Perú/Argentina/Brasil; cambia el "área accesible".
-- **(b) Mantener calibración en Chile**, solo limpiar a SA: las presencias fuera de Chile
-  se descartarían en la etapa 04 (poco aporta limpiar a SA).
-
-Recomiendo **(a)** para que el cambio de alcance sea coherente de punta a punta. Esto NO se
-toca en la etapa 01 (solo limpieza); lo registro aquí porque condiciona la etapa 04 y la
-clasificación de especies. *(No bloquea el inicio de la etapa 01.)*
-
-### 1.5 Estructura modular propuesta para la etapa 01
-
-Misma lógica, separada en módulos pequeños y testeables (en vez de un único script de 600
-líneas). Propuesta a auditar:
-
-```
-src/limpieza/
-  io.py            # cargar xlsx + normalizar columnas (hoy en utils.load_raw_occurrences)
-  geo_scope.py     # ★ filtro Sudamérica (geometría o país)  ← NUEVO
-  dedup.py         # duplicados exactos
-  uncertainty.py   # filtro de incertidumbre
-  coords.py        # coords sospechosas/inválidas
-  centroids.py     # centroides admin (Natural Earth)
-  ocean.py         # máscara de tierra/océano
-  thinning.py      # thinning 2.5′ por especie
-  grouping.py      # clasificación A/B/C
-  pipeline.py      # orquesta el orden y reporta
-scripts/01_limpieza.py   # CLI delgado que llama a src.limpieza.pipeline
-```
-
-Cada módulo: una función pura `gdf → gdf` con su log de "n antes → n después", igual que hoy.
-
-### 1.6 Cómo auditar/verificar la salida de esta etapa
-
-Checks reproducibles sobre `ocurrencias_limpias.gpkg`:
-
-- [ ] **0 registros fuera de Sudamérica** (todos los `pais` ∈ lista SA **y** todas las
-      coords dentro de `PREDICTION_BBOX`).
-- [ ] **0 lat/lon NaN**, 0 fuera de rango, 0 en `(0,0)`.
-- [ ] **0 puntos en océano** (intersección con land mask).
-- [ ] **1 punto máx. por celda 2.5′ por especie** (thinning correcto).
-- [ ] Conteo final por especie y **grupo A/B/C recalculado** sobre SA post-thinning.
-- [ ] Tabla "inicial → final, % retenido" por especie en el log.
+**Verificación de salida (checklist de auditoría):** 0 registros fuera de SA · 0 lat/lon NaN
+· 0 en océano · ≤1 punto por celda/especie · grupos recalculados · tabla inicial→final.
 
 ---
 
-## Etapas 2–8
+## [02] `02_capas_presente.py` — capas WorldClim (presente)
 
-*(pendientes de auditar — se documentarán aquí en orden a medida que avancemos)*
+**Salida:** `data/raw/worldclim_present/` (10 bioclim + elevación + `land_mask.tif`).
+
+| # | Paso | Qué hace | V4 |
+|---|---|---|---|
+| 1 | Descargar ZIPs | WorldClim v2.1 bioclim 2.5′ + elevación, con reanudación; extrae TIFs. | |
+| 2 | Seleccionar bioclim | extrae/renombra las 10 de `config.BIOCLIM_VARS` (`wc2.1_2.5m_bio_N.tif → bioN.tif`). | |
+| 3 | Preparar elevación | renombra a `elevation.tif`. | |
+| 4 | Máscara de tierra | rasteriza Natural Earth sobre la grilla de `bio1` → `land_mask.tif`. | |
+| 5 | Verificar alineación | mismo extent/resolución/CRS en todas las capas. | |
+
+> V4: WorldClim se descarga global; el recorte a Sudamérica ocurre aguas abajo. Sin cambio
+> funcional (opcional: recortar al bbox SA para acelerar 03/04).
+
+---
+
+## [03] `03_terrain.py` — terreno y alineación de predictoras
+
+**Salida:** `data/processed/rasters_aligned/` (14 predictoras alineadas).
+
+| # | Paso | Qué hace | V4 |
+|---|---|---|---|
+| 1 | Verificar entradas | exige elevación, mask y las 10 bioclim. | |
+| 2 | Cargar elevación | `elevation.tif`. | |
+| 3 | Derivar slope + aspect | xarray-spatial / richdem / **Horn geográfico** (escala metros por latitud — corrige el bug histórico). | |
+| 4 | Descomponer aspecto | `northness = cos(aspect)`, `eastness = sin(aspect)`. | |
+| 5 | Alinear bioclim | las 10 al grid de `bio1` (grilla canónica). | |
+| 6 | Alinear topográficas | elevación, slope, northness, eastness al mismo grid. | |
+| 7 | Aplicar land mask | enmascara todas las capas. | |
+| 8 | Verificar + escribir | verifica alineación y escribe los 14 GeoTIFF. | |
+
+> V4: sin cambio funcional. La topografía no depende del alcance geográfico.
+
+---
+
+## [04] `04_extraccion.py` — dataset modelable por especie
+
+**Salida:** `data/processed/species_datasets/{slug}.parquet` (+ `_predictors.json`).
+`main()` prepara el contexto y `process_species()` arma el dataset de cada especie.
+
+**`main()`:**
+
+| # | Paso | Qué hace | V4 |
+|---|---|---|---|
+| m1 | Especies modelables | lee columna `grupo` (A/B) del gpkg limpio (post-thinning). | hereda el set ampliado de [01]. |
+| m2 | Cargar ocurrencias + abrir rasters + land_mask | prepara entradas. | |
+| m3 | **`_load_calibration_mask`** | intersecta tierra ∩ **Chile** (polígono NE; respaldo `CALIBRATION_BBOX`). | ⟳ **V4**: cambiar área de calibración a **Sudamérica**. |
+
+**`process_species()`:**
+
+| # | Paso | Qué hace | V4 |
+|---|---|---|---|
+| 1 | Filtrar presencias | registros de la especie. | |
+| 2 | Extraer predictoras en presencias | + descarta NaN + **recorta presencias al área de calibración**. | ⟳ **V4**: recorta a SA (no a Chile). |
+| 3 | Generar background | `N_BACKGROUND=20.000` puntos dentro del área de calibración (target-group o aleatorio). | ⟳ **V4**: background dentro de SA. |
+| 4 | Selección de predictoras | elimina colineales: \|r\|>0.7 y VIF>10 (sobre presencias). | |
+| 5 | Combinar | presencias + background. | |
+| 6 | Folds CV espacial | clustering adaptativo k-means (`N_CV_FOLDS=5`) garantizando presencias por fold. | |
+| 7 | Guardar | ordena columnas → `.parquet` + `_predictors.json`. | |
+
+🔴 **Decisión B — área de calibración (pasos m3/2/3).** Recomiendo **calibrar en toda
+Sudamérica** (coherente con el alcance). Alternativa: seguir en Chile (pero entonces limpiar
+a SA aporta poco). → *No bloquea [01]; condiciona [04].*
+
+---
+
+## [05] `05_modelado.py` — ensemble (GLM·GAM·RF·GBM·MaxEnt)
+
+**Salida:** `data/modeling/ensemble_models/{slug}.joblib` (+ `{slug}_cv_preds.parquet`).
+Pasos de `process_species()`:
+
+| # | Paso | Qué hace | V4 |
+|---|---|---|---|
+| 1 | Cargar datos | `.parquet` + `_predictors.json`. | |
+| 2 | Ajustar scaler | `StandardScaler` sobre los predictores. | |
+| 3 | Construir modelos | 5 algoritmos con hiperparámetros de `tuned_params/*.json`. | |
+| 4 | Spatial CV | leave-one-block-out → TSS y AUC por algoritmo y por fold. | |
+| 5 | Pesos del ensemble | **equal-weight**; excluye algoritmos con TSS<0.5. | |
+| 6 | Reentrenar | todos los modelos con el 100% de los datos. | |
+| 7 | Umbrales | maxTSS, p10, min_train sobre las predicciones de training. | |
+| 8 | OOF del ensemble | predicción out-of-fold ponderada (norm. por fila) → `cv_preds.parquet`. | |
+| 9 | Serializar | guarda el artefacto `joblib` (incluye `train_env` para MESS). | |
+
+> V4: sin cambio de lógica. Los números cambiarán al cambiar el área de calibración en [04].
+
+---
+
+## [06] `06_validacion.py` — métricas
+
+**Salida:** `outputs/tables/metrics_{slug}.csv` + `metrics_all.csv`.
+Pasos de `validate_species()`:
+
+| # | Paso | Qué hace | V4 |
+|---|---|---|---|
+| 1 | Cargar datos + artefacto | parquet, predictoras, `joblib` (umbrales guardados). | |
+| 2 | Cargar OOF (`cv_preds`) | base de las métricas; si no hay, usa training con **warning**. | |
+| 3 | Umbral | usa el **maxTSS fijado en entrenamiento** (no se re-optimiza sobre OOF). | ⟳ (corrección 3.1 ya aplicada — mantener). |
+| 4 | Discriminación | TSS, AUC-ROC, AUC-PR, F1. | |
+| 5 | Calibración | Brier, slope/intercept + figura `calib_*.png`. | |
+| 6 | Solo-presencia | **Boyce/CBI**, OR10. | |
+| 7 | Robustez espacial | TSS y AUC **media ± SD por fold** ← número de encabezado honesto. | |
+| 8 | Ensemble | SD entre algoritmos, acuerdo binario. | |
+| 9 | Extrapolación | MESS, % de área extrapolada. | |
+| 10 | Exportar | `metrics_{slug}.csv` + consolidado `metrics_all.csv`. | |
+
+---
+
+## [07b] `07b_present_suitability.py` — idoneidad presente
+
+**Salida:** `outputs/maps/{slug}_present_suitability.tif`.
+
+| # | Paso | Qué hace | V4 |
+|---|---|---|---|
+| 1 | Especies modelables | grupo A/B del gpkg. | |
+| 2 | Cargar bioclim presente + topo | entradas de predicción. | |
+| 3 | `project_present` por especie | `build_predictor_stack` (recorta a `PREDICTION_BBOX` = Sudamérica) → `predict_ensemble` → `reconstruct_raster` → `save_geotiff`. | `PREDICTION_BBOX` ya es Sudamérica. |
+
+---
+
+## [07] `07_forecast_2050.py` — proyección 2050 (DIFERIDO, no certificado)
+
+Pasos de `process_species()`: (1) cargar ensemble · (2) descargar CMIP6 (4 GCM × 2 SSP) ·
+(3) proyectar presente · (4) proyectar cada GCM×SSP · (5) ensemble de ensembles (mean+SD) +
+Δidoneidad · (6) MESS futuro · (7) tabla de áreas (Mollweide).
+
+> Estado: rasters calculados en `outputs/maps/_forecast_deferred/`, **no certificados**
+> (falta MESS Chile→SA y validación por hindcasting). Fuera del alcance inmediato de V4.
+
+---
+
+## [08] `08_mapas.py` — figuras
+
+**Salida:** `outputs/figures/*.png`. Por especie: idoneidad presente, mapas binarios
+(maxTSS/p10/min_train), panel comparativo presente vs 2050, incertidumbre del ensemble, MESS,
+y curva de calibración. **Vista centrada en Sudamérica** (no global).
+
+---
+
+## Decisiones de auditoría abiertas
+
+- 🔴 **A — método del filtro Sudamérica (paso [01].3b):** geometría (recomendado) vs país.
+- 🔴 **B — área de calibración (pasos [04].m3/2/3):** toda Sudamérica (recomendado) vs Chile.
