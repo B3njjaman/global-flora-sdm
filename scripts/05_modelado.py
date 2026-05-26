@@ -51,6 +51,11 @@ _ALGO_NAMES: list[str] = ["glm", "gam", "rf", "gbm", "maxent"]
 # Algoritmos que necesitan escalado de predictores
 _NEEDS_SCALING: set[str] = {"glm", "gam", "maxent"}
 
+# Exponente de la ponderación del ensamble: peso ∝ TSS^k. k>1 concentra el peso
+# en los mejores modelos por especie sin descartarlos. k=3 validado en CV espacial
+# (TSS de ensamble +0.003–0.006 sobre la ponderación lineal k=1).
+_ENSEMBLE_WEIGHT_POWER: float = 3.0
+
 
 # ---------------------------------------------------------------------------
 # Helpers: TSS
@@ -379,7 +384,7 @@ def _compute_weights(cv_tss: dict[str, float]) -> dict[str, float]:
     raw: dict[str, float] = {}
     for algo, tss in cv_tss.items():
         if tss >= config.TSS_MIN_ENSEMBLE:
-            raw[algo] = tss
+            raw[algo] = tss ** _ENSEMBLE_WEIGHT_POWER
         else:
             raw[algo] = 0.0
             logger.info(
