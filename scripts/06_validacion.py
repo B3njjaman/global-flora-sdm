@@ -934,7 +934,11 @@ def validate_species(slug: str) -> dict[str, Any]:
     # 5. Discriminación (ensemble)
     # -----------------------------------------------------------------
     logger.info("  Calculando discriminación...")
-    disc = compute_discrimination_metrics(y_oof, y_prob_ens, thr_maxtss)
+    # TSS del ensemble al umbral OPTIMO-OOF (mismo criterio que por algoritmo, ver
+    # abajo) para que la comparación ensemble vs MaxEnt sea justa. El umbral de
+    # training (threshold_maxTSS) se conserva aparte para los mapas binarios.
+    thr_ens_disc, _ = _max_tss_threshold(y_oof, y_prob_ens)
+    disc = compute_discrimination_metrics(y_oof, y_prob_ens, thr_ens_disc)
     for k, v in disc.items():
         row[f"ens_{k}"] = v
     logger.info("  AUC=%.4f  TSS=%.4f  AUC-PR=%.4f  F1=%.4f",
