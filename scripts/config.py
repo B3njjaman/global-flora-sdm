@@ -57,6 +57,17 @@ CRS_GEO = "EPSG:4326"           # grilla de modelado (lat/lon)
 CRS_EQUAL_AREA = "ESRI:54009"   # Mollweide — para cálculo de áreas (km²)
 
 # ----------------------------------------------------------------------------
+# Acotamiento geográfico — Iteración 3
+# ----------------------------------------------------------------------------
+# Las especies son endémicas chilenas: separar su nicho de "todo el planeta"
+# inflaba la discriminación (AUC ~0.99 triviales). El modelo se CALIBRA solo con
+# background dentro de Chile (área accesible) y el mapa de idoneidad se PROYECTA
+# y RECORTA a Sudamérica. Bboxes en grados (min_lon, min_lat, max_lon, max_lat).
+CALIBRATION_COUNTRY = "Chile"                     # país que define el área de calibración (background + presencias)
+CALIBRATION_BBOX = (-76.0, -56.0, -66.0, -17.0)   # Chile continental — fallback si no carga el polígono Natural Earth
+PREDICTION_BBOX = (-82.0, -56.0, -34.0, 13.0)     # Sudamérica — extensión de predicción y recorte de mapas
+
+# ----------------------------------------------------------------------------
 # Limpieza de ocurrencias (Etapa 1)
 # ----------------------------------------------------------------------------
 MAX_COORD_UNCERTAINTY_M = 10_000  # a 2.5' (~5 km) descartar > 10 km

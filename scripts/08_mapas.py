@@ -297,7 +297,7 @@ def _make_figure_cartopy(
 
     fig = plt.figure(figsize=FIGSIZE_SINGLE)
     ax = fig.add_subplot(1, 1, 1, projection=proj)
-    ax.set_global()
+    _focus_view(ax, use_cartopy=True)
     return fig, ax
 
 
@@ -315,15 +315,30 @@ def _add_cartopy_features(ax: "plt.Axes") -> None:
 def _add_matplotlib_basemap(ax: "plt.Axes", extent: tuple) -> None:
     """Dibuja un basemap mínimo con matplotlib puro (fallback sin cartopy).
 
-    Solo añade el rectángulo del extent y etiquetas de ejes.
+    Solo añade el rectángulo del extent y etiquetas de ejes. La vista se enfoca
+    en Sudamérica (config.PREDICTION_BBOX), no en el extent global del raster.
     """
-    xmin, xmax, ymin, ymax = extent
-    ax.set_xlim(xmin, xmax)
-    ax.set_ylim(ymin, ymax)
+    minx, miny, maxx, maxy = config.PREDICTION_BBOX
+    ax.set_xlim(minx, maxx)
+    ax.set_ylim(miny, maxy)
     ax.set_xlabel("Longitud (°)", fontsize=8)
     ax.set_ylabel("Latitud (°)", fontsize=8)
     ax.tick_params(labelsize=7)
     ax.set_facecolor("#d6eaf8")
+
+
+def _focus_view(ax: "plt.Axes", use_cartopy: bool) -> None:
+    """Enfoca la vista del mapa en Sudamérica (config.PREDICTION_BBOX).
+
+    El raster ya viene recortado a Sudamérica (nodata fuera); esto ajusta el
+    encuadre para que la figura no muestre el globo completo.
+    """
+    minx, miny, maxx, maxy = config.PREDICTION_BBOX
+    if use_cartopy:
+        ax.set_extent([minx, maxx, miny, maxy], crs=ccrs.PlateCarree())
+    else:
+        ax.set_xlim(minx, maxx)
+        ax.set_ylim(miny, maxy)
 
 
 def _add_colorbar(
@@ -679,7 +694,7 @@ def plot_comparison_panel(
             (future_data, "Futuro media 2050 (CMIP6)", axes[1]),
         ]
         for arr, subtitle, ax in panels:
-            ax.set_global()
+            _focus_view(ax, use_cartopy=True)
             _add_cartopy_features(ax)
             im = ax.imshow(
                 arr,
