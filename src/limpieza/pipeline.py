@@ -22,7 +22,7 @@ if str(_SCRIPTS) not in sys.path:
 import config  # noqa: E402
 import utils   # noqa: E402
 
-from . import geo_scope, io
+from . import dedup, geo_scope, io
 
 log = utils.get_logger("limpieza.pipeline")
 
@@ -53,12 +53,20 @@ def run(metodo_sa: str = "pais", salida: Path | None = None) -> pd.DataFrame:
         metodo_sa, n0, len(df_sa), n0 - len(df_sa), 100.0 * len(df_sa) / max(n0, 1),
     )
     log.info("Países retenidos:\n%s", df_sa["pais"].value_counts().to_string())
+
+    # --- Paso 1: eliminar duplicados (especie + lat + lon) ---
+    n_sa = len(df_sa)
+    df_dedup = dedup.eliminar_duplicados(df_sa)
     log.info(
-        "Registros por especie en Sudamérica:\n%s",
-        df_sa["especie"].value_counts().to_string(),
+        "Duplicados (especie+lat+lon): %d → %d (−%d)",
+        n_sa, len(df_dedup), n_sa - len(df_dedup),
+    )
+    log.info(
+        "Registros por especie (Sudamérica, sin duplicados):\n%s",
+        df_dedup["especie"].value_counts().to_string(),
     )
 
-    # --- Guardar 'Especies_sudamerica' ---
-    df_sa.to_csv(salida, index=False, encoding="utf-8")
-    log.info("Guardado: %s  (%d filas × %d columnas)", salida, len(df_sa), df_sa.shape[1])
-    return df_sa
+    # --- Guardar 'Especies_sudamerica' (estado actual de la limpieza) ---
+    df_dedup.to_csv(salida, index=False, encoding="utf-8")
+    log.info("Guardado: %s  (%d filas × %d columnas)", salida, len(df_dedup), df_dedup.shape[1])
+    return df_dedup
