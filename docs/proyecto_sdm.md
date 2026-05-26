@@ -1,8 +1,8 @@
-# Modelos de distribución de especies (SDM) — Python, alcance global, con forecasting
+# Modelos de distribución de especies (SDM) — Python, alcance regional (Chile/Sudamérica), con forecasting
 
 ## Objetivo
 
-Modelar la distribución potencial de 21 especies de flora con registros en GBIF a **escala global**, en **stack Python**, usando un **enfoque ensemble** que combina múltiples algoritmos (más allá de MaxEnt), y **proyectar a 2050** bajo escenarios CMIP6.
+Modelar la distribución potencial de especies de flora chilena con registros en GBIF a **escala regional**, calibrando dentro de **Chile** como área accesible y proyectando/visualizando los mapas de idoneidad a **Sudamérica**, en **stack Python**, usando un **enfoque ensemble** que combina múltiples algoritmos (más allá de MaxEnt), y **proyectar a 2050** bajo escenarios CMIP6.
 
 Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topografía; iteraciones siguientes incorporan groundwater (pozos, ríos), índices temporales (NDVI/EVI), y eventualmente deep learning sobre series temporales para forecasting nativo.
 
@@ -10,8 +10,8 @@ Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topo
 
 | Decisión | Elegida | Por qué |
 |---|---|---|
-| Alcance espacial | Global | Captura el nicho completo de especies cosmopolitas/introducidas; permite detectar análogos climáticos para endémicas |
-| Resolución | 2.5 arc-min (~5 km) | Punto dulce para SDM global; 30 arc-sec global son 3–10 GB por variable, inmanejable |
+| Alcance espacial | Regional: calibración en Chile, predicción a Sudamérica | Área accesible coherente con especies endémicas chilenas; evita inflar AUC con background planetario |
+| Resolución | 2.5 arc-min (~5 km) | Punto dulce para SDM regional; 30 arc-sec global son 3–10 GB por variable, inmanejable |
 | Stack | Python | Flexibilidad para extender a deep learning, modelos temporales, integración hidrológica |
 | Modelos | Ensemble: GLM, GAM, RF, GBM, MaxEnt | Robustez frente a sesgo de un solo algoritmo |
 | Horizonte temporal | Presente + 2050 (CMIP6) | Decisiones estratégicas a 30 años son defendibles; más allá la incertidumbre se dispara (Brodie et al. 2022) |
@@ -28,9 +28,9 @@ Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topo
 
 | Grupo | Especies | Estrategia |
 |---|---|---|
-| **A. Cosmopolitas / introducidas** | *Schinus areira*, *Atriplex semibaccata* | Modelar global; útil para predecir invasividad |
-| **B. Endémicas con datos suficientes** | *Nolana divaricata*, *N. sedifolia*, *Encelia canescens*, *Eulychnia acida*, *Krameria cistoidea*, otras | Modelar global; predicción + análogos climáticos |
-| **C. Pocos registros (<50)** | *Centaurea chilensis* (6), *Aloysia salviifolia* (39), *Caesalpinia angulata* (28), *Atriplex deserticola* (44) | **No modelar individualmente.** Considerar descarte, pooling taxonómico, o métodos especializados para datos escasos |
+| **A. Introducidas con suficientes registros en Chile** | *Schinus areira* (n=72 en Chile) | Modelar con marco regional; predice nicho climático dentro de Chile/Sudamérica. Cuidado con interpretación de invasividad: la especie ocupa sitios antropogénicos |
+| **B. Endémicas con datos suficientes** | *Nolana divaricata*, *N. sedifolia*, *Encelia canescens*, *Eulychnia acida*, *Krameria cistoidea*, otras | Modelar regional (calibración Chile, proyección Sudamérica); predicción + análogos climáticos dentro del subcontinente |
+| **C. Pocos registros en Chile (<50)** | *Atriplex semibaccata* (n=8 en Chile, insuficiente), *Centaurea chilensis*, *Aloysia salviifolia*, *Caesalpinia angulata*, *Atriplex deserticola* | **No modelar individualmente.** Con acotamiento a Chile, n=8 queda muy por debajo del umbral mínimo de 50 registros. Considerar descarte, pooling taxonómico, o métodos especializados para datos escasos |
 
 ## Variables predictoras — Iteración 1
 
@@ -39,7 +39,7 @@ Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topo
 | Código | Variable | Justificación |
 |---|---|---|
 | BIO1 | Temperatura media anual | Driver fundamental |
-| BIO4 | Estacionalidad de temperatura | **Crítica a escala global**: distingue trópicos de zonas templadas |
+| BIO4 | Estacionalidad de temperatura | **Crítica en el gradiente regional**: distingue zonas áridas del norte de Chile de las zonas templadas del sur |
 | BIO5 | Temp. máx. mes más cálido | Tolerancia a calor extremo |
 | BIO6 | Temp. mín. mes más frío | Tolerancia a frío extremo |
 | BIO7 | Rango anual de temperatura | BIO5 - BIO6 |
@@ -60,7 +60,7 @@ Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topo
 
 > **Por qué descomponer el aspecto:** el aspecto en grados (0–360°) es circular: 359° y 1° son casi idénticos pero numéricamente opuestos. Descomponer en `sin/cos` lo convierte en dos variables continuas y monótonas.
 
-> **Nota sobre northness entre hemisferios:** en el sur las laderas más cálidas miran al norte, en el norte al sur. Si el modelo cruza hemisferios, considerar `northness * sign(latitud)` o incluir latitud absoluta.
+> **Nota sobre northness:** Chile y Sudamérica están en el hemisferio sur, donde las laderas más cálidas miran al norte. Al proyectar a Sudamérica completa no hay cruce de hemisferios relevante, pero si se extiende a zonas tropicales ecuatoriales conviene revisar `northness * sign(latitud)`.
 
 ## Stack Python — librerías por etapa
 
@@ -112,10 +112,11 @@ Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topo
 ### Etapa 3 — Dataset modelable (`04_extraccion.py`)
 
 - Extraer valores de raster en cada punto de presencia (`rasterstats` o `rioxarray`)
-- Generar **background points**: 10.000–50.000 puntos globales en tierra
-- **Target-group background** (recomendado a escala global): sacar puntos con probabilidad proporcional a densidad de registros del grupo taxonómico (todas las Plantae de GBIF como referencia de esfuerzo de muestreo)
+- Generar **background points**: 10.000–50.000 puntos muestreados **dentro de Chile** (polígono Natural Earth admin-0 intersección tierra; respaldo: bbox `CALIBRATION_BBOX`). Configuración: `CALIBRATION_COUNTRY="Chile"`. Esto define el área accesible y evita inflar la discriminación con background planetario
+- **Target-group background** (recomendado): sacar puntos con probabilidad proporcional a densidad de registros del grupo taxonómico dentro del área de calibración (Chile)
+- **Recorte de presencias:** igualmente se filtran al polígono de Chile antes de modelar
 - **Colinealidad:** VIF y matriz de correlación; eliminar |r| > 0.7 o VIF > 10
-- **Split espacial:** spatial block CV con bloques de ~500–1000 km (`spacv` o implementación propia)
+- **Split espacial:** spatial block CV con bloques de ~100–300 km (escala apropiada para Chile; `spacv` o implementación propia)
 
 ### Etapa 4 — Ensemble (`05_modelado.py`)
 
@@ -188,7 +189,7 @@ RF y GBM discriminan bien pero calibran mal; MaxEnt y GLM al revés. Importante 
 | **MoD** | Variable más responsable de la extrapolación |
 | **ExDet (NT1/NT2)** | Distingue extrapolación univariada de combinaciones novedosas |
 
-A escala global y especialmente en forecasting, reportar MESS es **obligatorio**.
+Al proyectar desde Chile a Sudamérica y especialmente en forecasting, reportar MESS es **obligatorio**.
 
 #### 5.6 Evaluación del ensemble (no solo modelos individuales)
 
@@ -220,11 +221,11 @@ Reportar al menos 2 umbrales para mostrar sensibilidad:
 
 ### Etapa 6 — Proyección a 2050 (`07_forecast.py`)
 
-- Aplicar el ensemble entrenado en presente sobre las capas CMIP6 futuras
+- Aplicar el ensemble entrenado en presente sobre las capas CMIP6 futuras **recortadas a Sudamérica** (`PREDICTION_BBOX`)
 - **Una proyección por combinación GCM × SSP** = 4 GCMs × 2 SSPs = 8 mapas por especie
 - **Ensemble de ensembles:** promediar las 8 proyecciones, reportar SD
-- **MESS futuro:** mostrar dónde 2050 tiene combinaciones climáticas fuera del rango de entrenamiento
-- **Cambio relativo:** mapa de Δidoneidad (futuro − presente)
+- **MESS futuro:** mostrar dónde 2050 tiene combinaciones climáticas fuera del rango de entrenamiento (especialmente relevante al proyectar fuera de Chile)
+- **Cambio relativo:** mapa de Δidoneidad (futuro − presente), enfocado en Sudamérica
 - **Cálculo de áreas:** reproyectar a equiárea (Mollweide o Equal Earth) antes de calcular km²
 
 #### Validación de forecast con hindcasting (recomendado)
@@ -307,17 +308,17 @@ Una vez funcionando la iteración 1, el pipeline está diseñado para crecer en 
 
 1. **MaxEnt no es "malo", solo es uno.** Ensemble reduce sesgo. RF y GBM suelen ganarle a MaxEnt en discriminación, pero MaxEnt suele calibrar mejor.
 
-2. **El thinning espacial importa más que el algoritmo.** Especialmente a escala global, donde el sesgo GBIF (Europa/NA/Australia) es brutal.
+2. **El thinning espacial importa más que el algoritmo.** Especialmente cuando el background está acotado a Chile, donde el sesgo GBIF concentrado en zonas accesibles puede distorsionar el nicho aprendido.
 
 3. **Cross-validation espacial no es opcional.** AUC con CV aleatorio en SDM moderno está desacreditado. Métricas de 0.95+ son bandera roja, no verde.
 
-4. **Reportar MESS siempre.** A escala global y especialmente en forecast, partes del mapa estarán fuera del espacio de entrenamiento.
+4. **Reportar MESS siempre.** Al proyectar desde Chile a toda Sudamérica y especialmente en forecast, partes del mapa estarán fuera del espacio de entrenamiento.
 
 5. **Forecasting honesto requiere hindcasting.** Validar con período pasado conocido antes de confiar en proyecciones futuras (Cavanaugh et al. 2022).
 
 6. **Incertidumbre del forecast crece con el tiempo.** Brodie et al. (2022): primeros 30 años el poder predictivo se mantiene; más allá la incertidumbre se dispara y depende de qué tan novedoso es el clima futuro vs. entrenamiento.
 
-7. **Endémicas en modelos globales.** Para *Nolana* chilenas, el modelo predecirá área pequeña en rango conocido + algunos análogos climáticos. Es esperable, no es un bug.
+7. **Endémicas en modelos regionales.** Para *Nolana* chilenas y otras endémicas, calibrar en Chile es lo metodológicamente correcto: el background regional representa el área accesible real y evita la inflación artificial de AUC que ocurría con background planetario. El modelo puede predecir análogos climáticos en Sudamérica fuera de Chile, pero esa proyección debe interpretarse con el MESS como guía.
 
 8. **Las 3 especies truncadas en 3.000 registros.** Si son foco real, rehacer descarga particionada vía API GBIF.
 

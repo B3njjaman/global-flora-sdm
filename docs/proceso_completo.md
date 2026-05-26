@@ -221,3 +221,133 @@ un TSS más alto sino **robustez** (no depende de un solo algoritmo) e
 
 Utilidades de saneamiento de esta iteración: `fix_slope_base_datos.py`,
 `quemar_background_inservible.py`, `regenerar_slope_tif.py`, `aplicar_cv_adaptativo.py`.
+
+---
+
+# Iteración 3 — Acotar a Chile (área de calibración) y mapa a Sudamérica
+
+## Diagnóstico: AUC inflados por extensión planetaria del background
+
+Las métricas de iteración 2 seguían en AUC 0.95–0.99. La poda polar del background
+(sección 2.2) había eliminado el síntoma más obvio, pero el problema de raíz
+permanecía intacto: el background cubría **todo el planeta**, y las 14 especies son
+endémicas o cuasi-endémicas chilenas. Separar el nicho climático de una planta del
+desierto chileno de "el resto del mundo" es una tarea trivial para cualquier
+clasificador; el AUC alto no refleja capacidad discriminativa real sino la enormidad
+del contraste geográfico.
+
+**Evidencia concreta — skytanthus_acutus:**
+
+```
+Presencias:  lon [-71, -70]  lat [-36, -24]   (franja andina chilena)
+Background:  lon [-164, 179] lat [-55,  55]   (el planeta entero)
+```
+
+Con ese contraste, incluso un modelo nulo que usara solo longitud obtendría AUC > 0.95.
+
+---
+
+## Solución: edición quirúrgica del área, sin tocar el resto del pipeline
+
+Se modificaron cuatro archivos. El resto del pipeline (limpieza, capas, terreno,
+modelado, validación) no se tocó.
+
+### `config.py`
+Se añadieron dos parámetros de área:
+
+- `CALIBRATION_COUNTRY = "Chile"` — nombre para la máscara de tierra.
+- `CALIBRATION_BBOX` — bounding box del Chile continental.
+- `PREDICTION_BBOX` — bounding box de Sudamérica (para proyecciones y mapas).
+
+### `04_extraccion.py`
+Nuevo helper `_load_calibration_mask` que intersecta la capa de tierra (Natural
+Earth admin-0, ya cacheada por `01_limpieza.py`) con el polígono de Chile y, de
+respaldo, con el `CALIBRATION_BBOX`. Efectos:
+
+1. El **background se muestrea solo dentro de Chile**: las celdas fuera del polígono
+   no son elegibles, independientemente de sus valores climáticos.
+2. Las **presencias también se recortan a Chile**: esto es relevante para las
+   introducidas *Schinus areira* y *Atriplex semibaccata*, cuyos registros GBIF son
+   globales; dentro de este proyecto interesa modelar solo la fracción chilena.
+
+### `07_forecast_2050.py` y `07b_present_suitability.py`
+`build_predictor_stack` acepta ahora el parámetro `extent_bbox` y recorta el stack
+al `PREDICTION_BBOX` antes de predecir. La proyección de idoneidad presente cubre
+**Sudamérica** en lugar del planeta entero (~0.9 M píxeles vs decenas de millones):
+más rápido y más informativo visualmente.
+
+### `08_mapas.py`
+La vista por defecto de los mapas se enfoca en Sudamérica. Antes llamaba a
+`ax.set_global()`, lo que forzaba una vista mundial centrada en el Atlántico que
+hacía los mapas de Chile prácticamente ilegibles.
+
+---
+
+## Verificación de la máscara de Chile
+
+```
+Celdas en la máscara : 49.807
+Rango de longitud    : [-75.6, -67.0]
+Rango de latitud     : [-55.6, -17.6]
+Fraccion de la tierra:  0.4 %
+```
+
+El recorte es el Chile continental exacto (excluye la Antártida chilena).
+
+---
+
+## Resultados: métricas honestas tras acotar el área
+
+Las métricas **bajaron** respecto a iteración 2. Eso es la señal correcta: antes
+estaban infladas por el contraste geográfico trivial; ahora el modelo tiene que
+discriminar dentro del territorio donde las especies realmente viven.
+
+**Medias (CV espacial):**
+
+| Metrica | Iteracion 2 | Iteracion 3 |
+|---|---:|---:|
+| AUC     | 0.944 | 0.884 |
+| TSS     | 0.822 | 0.707 |
+| Boyce   |  0.68 |  0.42 |
+
+**Por especie (iteracion 3):**
+
+| Especie | TSS | AUC | Boyce | Nota |
+|---|---:|---:|---:|---|
+| krameria_cistoidea      | 0.89 | — | — | solida |
+| skytanthus_acutus       | 0.79 | — | — | solida |
+| nolana_divaricata       | 0.77 | — | — | solida |
+| nolana_sedifolia        | 0.79 | — | — | solida |
+| cumulopuntia_sphaerica  |  —   | — | 0.15 | Boyce bajo, modelo debil |
+| neltuma_chilensis       |  —   | — | 0.19 | Boyce bajo, modelo debil |
+| pleurophora_pungens     |  —   | — | -0.23 | no transfiere |
+| senna_cumingii          |  —   | — | -0.66 | no transfiere |
+| atriplex_semibaccata    | —    | — | — | n=8 en Chile (< umbral 50) |
+| schinus_areira          | —    | — | — | n=72 en Chile; especie introducida |
+
+Las especies introducidas (*Atriplex semibaccata*, *Schinus areira*) colapsaron por
+datos: al recortar los registros GBIF globales a Chile, *atriplex_semibaccata* quedó
+con solo **n = 8 presencias** en Chile, por debajo del umbral operativo de 50
+registros. *Schinus areira* bajó a **n = 72**, suficiente para modelar pero con
+transferencia geográfica muy limitada dentro del país.
+
+Las especies que quedan expuestas como flojas (cumulopuntia, neltuma, pleurophora,
+senna) no son errores del pipeline: son especies con poca señal climática dentro del
+dominio chileno, lo cual es una conclusión ecológica relevante en sí misma.
+
+---
+
+## 8. Orden de los scripts (reproducibilidad) — actualización iteración 3
+
+1. `01_limpieza.py` — limpieza de ocurrencias (también cachea polígono Natural Earth).
+2. `02_capas_presente.py` — descarga/preparación de capas WorldClim presentes.
+3. `03_terrain.py` — derivación de terreno (pendiente Horn geográfico) y alineación.
+4. `04_extraccion.py` — extracción de predictores; **acota background y presencias a Chile** mediante `_load_calibration_mask`; CV espacial adaptativo.
+5. `05_modelado.py` — ensemble (lee `tuned_params/`), combinación equal-weight.
+6. `06_validacion.py` — metricas (TSS/AUC/Boyce/Brier/MESS, comparacion justa).
+7. `07b_present_suitability.py` — idoneidad presente **recortada a Sudamerica** (`PREDICTION_BBOX`).
+8. `08_mapas.py` — figuras PNG con **vista centrada en Sudamerica** (no global).
+
+Utilidades de saneamiento de iteracion 2 (siguen siendo validas):
+`fix_slope_base_datos.py`, `quemar_background_inservible.py`,
+`regenerar_slope_tif.py`, `aplicar_cv_adaptativo.py`.
