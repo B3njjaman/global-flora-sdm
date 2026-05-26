@@ -2,11 +2,15 @@
 pipeline.py — Orquestador modular de la limpieza (V4).
 
 Crece paso a paso. Estado actual:
-  0. Cargar el dataset GBIF crudo        (io.cargar_ocurrencias_crudas)
-  3b. Filtrar a Sudamérica → 'Especies_sudamerica'  (geo_scope.filtrar_sudamerica)
+  0. Cargar el dataset GBIF crudo            (io.cargar_ocurrencias_crudas)
+  1. Filtrar a Sudamérica                    (geo_scope.filtrar_sudamerica)
+  2. Eliminar duplicados (especie+lat+lon)   (dedup.eliminar_duplicados)
+  3. Coordenadas sospechosas / inválidas     (coords.filtrar_coords_sospechosas)
+  4. Thinning espacial 2.5' (1 pt/celda/sp)  (thinning.thinning_espacial)
+  → guarda 'Especies_sudamerica'.
 
-Pasos siguientes a portar desde la versión previa (en orden): duplicados,
-incertidumbre, coords sospechosas, centroides admin, océano, thinning, grupos A/B/C.
+Pasos siguientes a portar desde la versión previa (se integran de a uno, guiados):
+incertidumbre, centroides admin, océano, grupos A/B/C.
 """
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ if str(_SCRIPTS) not in sys.path:
 import config  # noqa: E402
 import utils   # noqa: E402
 
-from . import dedup, geo_scope, io
+from . import coords, dedup, geo_scope, io, thinning
 
 log = utils.get_logger("limpieza.pipeline")
 
@@ -66,7 +70,23 @@ def run(metodo_sa: str = "pais", salida: Path | None = None) -> pd.DataFrame:
         df_dedup["especie"].value_counts().to_string(),
     )
 
+    # --- Paso 3: coordenadas sospechosas / inválidas ---
+    n_dd = len(df_dedup)
+    df_coords = coords.filtrar_coords_sospechosas(df_dedup)
+    log.info(
+        "Coords sospechosas/inválidas: %d → %d (−%d)",
+        n_dd, len(df_coords), n_dd - len(df_coords),
+    )
+
+    # --- Paso 4: thinning espacial 2.5' (1 punto por celda y especie) ---
+    n_co = len(df_coords)
+    df_thin = thinning.thinning_espacial(df_coords)
+    log.info(
+        "Thinning 2.5' (1 pt/celda/especie): %d → %d (−%d)",
+        n_co, len(df_thin), n_co - len(df_thin),
+    )
+
     # --- Guardar 'Especies_sudamerica' (estado actual de la limpieza) ---
-    df_dedup.to_csv(salida, index=False, encoding="utf-8")
-    log.info("Guardado: %s  (%d filas × %d columnas)", salida, len(df_dedup), df_dedup.shape[1])
-    return df_dedup
+    df_thin.to_csv(salida, index=False, encoding="utf-8")
+    log.info("Guardado: %s  (%d filas × %d columnas)", salida, len(df_thin), df_thin.shape[1])
+    return df_thin

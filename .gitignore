@@ -41,6 +41,8 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+# Archivos lock temporales de Excel/Office
+~$*
 
 # Exports pesados regenerables y logs de proceso
 outputs/tables/base_de_datos_completa.*
