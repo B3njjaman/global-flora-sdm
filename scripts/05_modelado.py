@@ -99,11 +99,35 @@ def _tss_youden(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float]:
 # Helpers: construcción de modelos
 # ---------------------------------------------------------------------------
 
-def _build_models() -> dict[str, Any]:
-    """Instancia los 5 modelos con los hiperparámetros definidos en el contrato.
+def _load_tuned(algo: str, defaults: dict[str, Any]) -> dict[str, Any]:
+    """Carga hiperparámetros tuneados desde scripts/tuned_params/{algo}.json.
 
-    Los modelos de pyGAM y elapid se intentan importar en tiempo de ejecución
-    para que un fallo de instalación no rompa todo el script.
+    Devuelve los `defaults` con los valores tuneados sobreescritos. Si el archivo
+    no existe o falla la lectura, retorna los defaults intactos (comportamiento
+    idéntico al previo al tuning). El JSON debe ser un dict de kwargs válidos
+    para el constructor del algoritmo correspondiente.
+    """
+    params = dict(defaults)
+    tuned_path = Path(__file__).resolve().parent / "tuned_params" / f"{algo}.json"
+    if tuned_path.exists():
+        try:
+            with open(tuned_path, "r", encoding="utf-8") as fh:
+                overrides = json.load(fh)
+            if isinstance(overrides, dict):
+                params.update(overrides)
+                logger.info("  %-8s hiperparámetros tuneados: %s", algo, overrides)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("  %-8s no se pudo leer tuned_params/%s.json: %s", algo, algo, exc)
+    return params
+
+
+def _build_models() -> dict[str, Any]:
+    """Instancia los 5 modelos con sus hiperparámetros.
+
+    Cada algoritmo arranca con los defaults del contrato y, si existe
+    scripts/tuned_params/{algo}.json, lo sobreescribe con los valores tuneados.
+    Los modelos de pyGAM y elapid se importan en tiempo de ejecución para que un
+    fallo de instalación no rompa todo el script.
 
     Retorna
     -------
@@ -112,47 +136,47 @@ def _build_models() -> dict[str, Any]:
     models: dict[str, Any] = {}
 
     # GLM — LogisticRegression L2 (escalado externo)
-    models["glm"] = LogisticRegression(
-        penalty="l2",
-        solver="lbfgs",
-        max_iter=1000,
-        random_state=config.RANDOM_SEED,
-    )
+    models["glm"] = LogisticRegression(**_load_tuned("glm", {
+        "penalty": "l2",
+        "solver": "lbfgs",
+        "max_iter": 1000,
+        "random_state": config.RANDOM_SEED,
+    }))
 
     # GAM — pyGAM LogisticGAM (escalado externo)
     try:
         from pygam import LogisticGAM  # type: ignore
-        models["gam"] = LogisticGAM()
+        models["gam"] = LogisticGAM(**_load_tuned("gam", {}))
     except ImportError:
         logger.warning("pyGAM no instalado — GAM excluido del ensemble.")
 
     # RF — RandomForest (sin escalado)
     from sklearn.ensemble import RandomForestClassifier
-    models["rf"] = RandomForestClassifier(
-        n_estimators=500,
-        class_weight="balanced",
-        n_jobs=-1,
-        random_state=config.RANDOM_SEED,
-    )
+    models["rf"] = RandomForestClassifier(**_load_tuned("rf", {
+        "n_estimators": 500,
+        "class_weight": "balanced",
+        "n_jobs": -1,
+        "random_state": config.RANDOM_SEED,
+    }))
 
     # GBM — LightGBM (sin escalado)
     try:
         import lightgbm as lgb  # type: ignore
-        models["gbm"] = lgb.LGBMClassifier(
-            num_leaves=31,
-            learning_rate=0.05,
-            n_estimators=300,
-            class_weight="balanced",
-            random_state=config.RANDOM_SEED,
-            verbose=-1,
-        )
+        models["gbm"] = lgb.LGBMClassifier(**_load_tuned("gbm", {
+            "num_leaves": 31,
+            "learning_rate": 0.05,
+            "n_estimators": 300,
+            "class_weight": "balanced",
+            "random_state": config.RANDOM_SEED,
+            "verbose": -1,
+        }))
     except ImportError:
         logger.warning("lightgbm no instalado — GBM excluido del ensemble.")
 
     # MaxEnt — elapid (escalado externo)
     try:
         from elapid import MaxentModel  # type: ignore
-        models["maxent"] = MaxentModel()
+        models["maxent"] = MaxentModel(**_load_tuned("maxent", {}))
     except ImportError:
         logger.warning("elapid no instalado — MaxEnt excluido del ensemble.")
 

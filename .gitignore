@@ -40,3 +40,7 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Exports pesados regenerables y logs de proceso
+outputs/tables/base_de_datos_completa.*
+outputs/_*.txt
