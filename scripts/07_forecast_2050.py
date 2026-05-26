@@ -396,6 +396,7 @@ def build_predictor_stack(
     bioclim_layers: dict[str, xr.DataArray],
     topo_layers: dict[str, xr.DataArray],
     feature_names: list[str],
+    extent_bbox: tuple[float, float, float, float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, Any]:
     """Apila los predictores en una matriz 2D (N_pixels × P_features).
 
@@ -449,7 +450,18 @@ def build_predictor_stack(
     valid_mask = ~np.any(~np.isfinite(stacked), axis=1)
     valid_mask_2d = valid_mask.reshape(ref_da.shape[-2:])
 
-    X = stacked[valid_mask]
+    # Recorte geográfico opcional: solo se predice (y se guarda) dentro del bbox.
+    # Para esta iteración el mapa se enfoca en Sudamérica (config.PREDICTION_BBOX).
+    if extent_bbox is not None:
+        minx, miny, maxx, maxy = extent_bbox
+        ys = np.asarray(ref_da.coords[ref_da.dims[-2]].values)  # lat por fila
+        xs = np.asarray(ref_da.coords[ref_da.dims[-1]].values)  # lon por columna
+        in_lon = (xs >= minx) & (xs <= maxx)
+        in_lat = (ys >= miny) & (ys <= maxy)
+        in_bbox = np.outer(in_lat, in_lon)
+        valid_mask_2d = valid_mask_2d & in_bbox
+
+    X = stacked[valid_mask_2d.ravel()]
     return X, valid_mask_2d, ref_da
 
 

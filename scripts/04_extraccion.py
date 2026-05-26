@@ -146,6 +146,68 @@ def _load_land_mask() -> tuple[np.ndarray, rasterio.DatasetReader]:
     return land, ds
 
 
+def _load_calibration_mask(
+    land: np.ndarray,
+    land_ds: rasterio.DatasetReader,
+) -> np.ndarray:
+    """Restringe la máscara de tierra al área de calibración (Chile).
+
+    Las especies son endémicas chilenas; calibrar contra background planetario
+    inflaba la discriminación (AUC ~0.99 triviales). Aquí se intersecta la tierra
+    con el polígono de Chile (Natural Earth admin-0, cacheado por 01_limpieza).
+    Si el polígono no está disponible, se usa config.CALIBRATION_BBOX de respaldo.
+
+    Retorna un array booleano (tierra ∩ Chile) alineado con `land`.
+    """
+    from rasterio.features import rasterize
+
+    try:
+        ne_path = config.RAW / "natural_earth" / "ne_110m_admin0_countries.gpkg"
+        gdf = gpd.read_file(ne_path)
+        name_col = next(
+            (c for c in ("ADMIN", "NAME", "SOVEREIGNT", "GEOUNIT")
+             if c in gdf.columns
+             and (gdf[c].astype(str) == config.CALIBRATION_COUNTRY).any()),
+            None,
+        )
+        if name_col is None:
+            raise ValueError(
+                f"'{config.CALIBRATION_COUNTRY}' no encontrado en {ne_path.name}"
+            )
+        geom = gdf[gdf[name_col].astype(str) == config.CALIBRATION_COUNTRY].geometry
+        country = rasterize(
+            [(g, 1) for g in geom],
+            out_shape=land.shape,
+            transform=land_ds.transform,
+            fill=0,
+            dtype="uint8",
+        ).astype(bool)
+        calib = land & country
+        logger.info(
+            "Área de calibración = tierra dentro de %s (polígono NE): %d celdas (de %d en tierra global).",
+            config.CALIBRATION_COUNTRY, int(calib.sum()), int(land.sum()),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "No se pudo cargar el polígono de %s (%s). Respaldo: bbox CALIBRATION_BBOX.",
+            config.CALIBRATION_COUNTRY, exc,
+        )
+        minx, miny, maxx, maxy = config.CALIBRATION_BBOX
+        cols = np.arange(land.shape[1])
+        rows = np.arange(land.shape[0])
+        xs, _ = land_ds.xy(np.zeros_like(cols), cols)   # lon por columna
+        _, ys = land_ds.xy(rows, np.zeros_like(rows))   # lat por fila
+        in_lon = (np.asarray(xs) >= minx) & (np.asarray(xs) <= maxx)
+        in_lat = (np.asarray(ys) >= miny) & (np.asarray(ys) <= maxy)
+        calib = land & np.outer(in_lat, in_lon)
+        logger.info("Área de calibración = tierra dentro del bbox Chile: %d celdas.", int(calib.sum()))
+
+    if calib.sum() == 0:
+        logger.error("Área de calibración vacía — se revierte a toda la tierra (revisar config).")
+        return land
+    return calib
+
+
 def _raster_land_coords(
     land: np.ndarray,
     ds: rasterio.DatasetReader,
@@ -583,6 +645,21 @@ def process_species(
         )
     logger.info("  Presencias con datos completos: %d", len(df_pres))
 
+    # Acotar presencias al área de calibración (Chile). Relevante sobre todo para
+    # las especies introducidas (Schinus, Atriplex), cuyos registros GBIF son
+    # globales: bajo el marco regional solo cuentan sus presencias en Chile.
+    p_rows, p_cols = rowcol(land_ds.transform, df_pres["lon"].values, df_pres["lat"].values)
+    p_rows = np.clip(np.asarray(p_rows), 0, land.shape[0] - 1)
+    p_cols = np.clip(np.asarray(p_cols), 0, land.shape[1] - 1)
+    inside = land[p_rows, p_cols]
+    n_pre_clip = len(df_pres)
+    df_pres = df_pres[inside].reset_index(drop=True)
+    if n_pre_clip - len(df_pres) > 0:
+        logger.info(
+            "  Presencias dentro del área de calibración (%s): %d (descartadas %d fuera).",
+            config.CALIBRATION_COUNTRY, len(df_pres), n_pre_clip - len(df_pres),
+        )
+
     if len(df_pres) == 0:
         logger.error(
             "  Sin presencias válidas para %s. Se omite esta especie.", species
@@ -806,6 +883,10 @@ def main() -> None:
         "  Celdas de tierra en land_mask: %d (%.1f%% del total).",
         land.sum(), 100.0 * land.sum() / land.size,
     )
+
+    # -- Acotar a Chile: el background (y las presencias) se restringen al área
+    #    de calibración. Esto reemplaza el muestreo planetario que inflaba el AUC. --
+    land = _load_calibration_mask(land, land_ds)
 
     # -- Procesar cada especie --
     errors: list[str] = []

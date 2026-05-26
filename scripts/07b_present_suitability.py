@@ -43,7 +43,10 @@ def project_present(species: str, present_bio, topo, overwrite: bool = False) ->
         return True
     bundle = _fc.load_ensemble(slug)
     feats = bundle["selected_predictors"]
-    X, mask, ref = _fc.build_predictor_stack(present_bio, topo, feats)
+    # Recorte a Sudamérica: el mapa de idoneidad se enfoca en el continente.
+    X, mask, ref = _fc.build_predictor_stack(
+        present_bio, topo, feats, extent_bbox=config.PREDICTION_BBOX
+    )
     suit = _fc.predict_ensemble(X, bundle)
     da = _fc.reconstruct_raster(suit, mask, ref)
     config.MAPS.mkdir(parents=True, exist_ok=True)
