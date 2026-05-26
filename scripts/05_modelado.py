@@ -322,13 +322,17 @@ def _spatial_cv(
             )
             continue
 
+        # Escalado AJUSTADO SOLO con el train del fold (evita fuga de datos del
+        # test hacia el escalado; el scaler global solo se usa en el modelo final).
+        fold_scaler = StandardScaler().fit(X_tr)
+
         for algo, proto in models_proto.items():
             try:
                 import copy
                 model_fold = copy.deepcopy(proto)
-                _fit_model(model_fold, algo, X_tr, y_tr, scaler)
+                _fit_model(model_fold, algo, X_tr, y_tr, fold_scaler)
                 X_te_s = (
-                    scaler.transform(X_te) if (algo in _NEEDS_SCALING and scaler is not None) else X_te
+                    fold_scaler.transform(X_te) if algo in _NEEDS_SCALING else X_te
                 )
                 proba = _predict_proba(model_fold, X_te_s, algo)
                 tss, _ = _tss_youden(y_te, proba)
@@ -604,10 +608,13 @@ def process_species(slug: str, especie: str) -> bool:
     # ------------------------------------------------------------------
     # 8. Predicciones OOF del ensemble para Etapa 6
     # ------------------------------------------------------------------
-    # Calcular columna ensemble OOF ponderada
+    # Calcular columna ensemble OOF ponderada con normalización POR FILA: cada
+    # fila se divide por la suma de pesos de los algoritmos que SÍ la predijeron
+    # (antes se dividía por el peso total aunque a una fila le faltara un algo, y
+    # un 0.0 legítimo se marcaba como NaN). Solo es NaN si ningún algo la cubrió.
     oof_algo_cols = [c for c in _ALGO_NAMES if c in oof_df.columns]
     ens_oof = np.zeros(len(oof_df))
-    total_w = 0.0
+    row_w = np.zeros(len(oof_df))
     for algo in oof_algo_cols:
         w = tss_weights.get(algo, 0.0)
         if w == 0.0:
@@ -615,11 +622,10 @@ def process_species(slug: str, especie: str) -> bool:
         col_vals = oof_df[algo].values
         valid_mask = ~np.isnan(col_vals)
         ens_oof[valid_mask] += w * col_vals[valid_mask]
-        total_w += w
+        row_w[valid_mask] += w
 
-    if total_w > 0:
-        ens_oof /= total_w
-    ens_oof[ens_oof == 0.0] = np.nan  # marcar filas sin OOF como NaN
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ens_oof = np.where(row_w > 0, ens_oof / row_w, np.nan)
 
     oof_df["ensemble"] = ens_oof
 
