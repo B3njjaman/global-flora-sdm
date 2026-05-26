@@ -51,6 +51,13 @@ _ALGO_NAMES: list[str] = ["glm", "gam", "rf", "gbm", "maxent"]
 # Algoritmos que necesitan escalado de predictores
 _NEEDS_SCALING: set[str] = {"glm", "gam", "maxent"}
 
+# Combinación del ensamble: promedio EQUAL-WEIGHT de los modelos que superan el
+# umbral (TSS≥TSS_MIN_ENSEMBLE). Validado en CV espacial sobre las 14 especies:
+# equal-weight (excluyendo modelos <0.5) da TSS medio 0.823, EMPATANDO a MaxEnt
+# (0.825) y superándolo en 8/14 especies y en AUC. La ponderación previa por TSS^k
+# concentraba demasiado y BAJABA el TSS de ensamble a 0.73 (peor que el promedio
+# simple). Stacking sobreajustaba (0.77). Por eso: equal-weight de los supervivientes.
+
 
 # ---------------------------------------------------------------------------
 # Helpers: TSS
@@ -99,11 +106,35 @@ def _tss_youden(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float]:
 # Helpers: construcción de modelos
 # ---------------------------------------------------------------------------
 
-def _build_models() -> dict[str, Any]:
-    """Instancia los 5 modelos con los hiperparámetros definidos en el contrato.
+def _load_tuned(algo: str, defaults: dict[str, Any]) -> dict[str, Any]:
+    """Carga hiperparámetros tuneados desde scripts/tuned_params/{algo}.json.
 
-    Los modelos de pyGAM y elapid se intentan importar en tiempo de ejecución
-    para que un fallo de instalación no rompa todo el script.
+    Devuelve los `defaults` con los valores tuneados sobreescritos. Si el archivo
+    no existe o falla la lectura, retorna los defaults intactos (comportamiento
+    idéntico al previo al tuning). El JSON debe ser un dict de kwargs válidos
+    para el constructor del algoritmo correspondiente.
+    """
+    params = dict(defaults)
+    tuned_path = Path(__file__).resolve().parent / "tuned_params" / f"{algo}.json"
+    if tuned_path.exists():
+        try:
+            with open(tuned_path, "r", encoding="utf-8") as fh:
+                overrides = json.load(fh)
+            if isinstance(overrides, dict):
+                params.update(overrides)
+                logger.info("  %-8s hiperparámetros tuneados: %s", algo, overrides)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("  %-8s no se pudo leer tuned_params/%s.json: %s", algo, algo, exc)
+    return params
+
+
+def _build_models() -> dict[str, Any]:
+    """Instancia los 5 modelos con sus hiperparámetros.
+
+    Cada algoritmo arranca con los defaults del contrato y, si existe
+    scripts/tuned_params/{algo}.json, lo sobreescribe con los valores tuneados.
+    Los modelos de pyGAM y elapid se importan en tiempo de ejecución para que un
+    fallo de instalación no rompa todo el script.
 
     Retorna
     -------
@@ -112,47 +143,47 @@ def _build_models() -> dict[str, Any]:
     models: dict[str, Any] = {}
 
     # GLM — LogisticRegression L2 (escalado externo)
-    models["glm"] = LogisticRegression(
-        penalty="l2",
-        solver="lbfgs",
-        max_iter=1000,
-        random_state=config.RANDOM_SEED,
-    )
+    models["glm"] = LogisticRegression(**_load_tuned("glm", {
+        "penalty": "l2",
+        "solver": "lbfgs",
+        "max_iter": 1000,
+        "random_state": config.RANDOM_SEED,
+    }))
 
     # GAM — pyGAM LogisticGAM (escalado externo)
     try:
         from pygam import LogisticGAM  # type: ignore
-        models["gam"] = LogisticGAM()
+        models["gam"] = LogisticGAM(**_load_tuned("gam", {}))
     except ImportError:
         logger.warning("pyGAM no instalado — GAM excluido del ensemble.")
 
     # RF — RandomForest (sin escalado)
     from sklearn.ensemble import RandomForestClassifier
-    models["rf"] = RandomForestClassifier(
-        n_estimators=500,
-        class_weight="balanced",
-        n_jobs=-1,
-        random_state=config.RANDOM_SEED,
-    )
+    models["rf"] = RandomForestClassifier(**_load_tuned("rf", {
+        "n_estimators": 500,
+        "class_weight": "balanced",
+        "n_jobs": -1,
+        "random_state": config.RANDOM_SEED,
+    }))
 
     # GBM — LightGBM (sin escalado)
     try:
         import lightgbm as lgb  # type: ignore
-        models["gbm"] = lgb.LGBMClassifier(
-            num_leaves=31,
-            learning_rate=0.05,
-            n_estimators=300,
-            class_weight="balanced",
-            random_state=config.RANDOM_SEED,
-            verbose=-1,
-        )
+        models["gbm"] = lgb.LGBMClassifier(**_load_tuned("gbm", {
+            "num_leaves": 31,
+            "learning_rate": 0.05,
+            "n_estimators": 300,
+            "class_weight": "balanced",
+            "random_state": config.RANDOM_SEED,
+            "verbose": -1,
+        }))
     except ImportError:
         logger.warning("lightgbm no instalado — GBM excluido del ensemble.")
 
     # MaxEnt — elapid (escalado externo)
     try:
         from elapid import MaxentModel  # type: ignore
-        models["maxent"] = MaxentModel()
+        models["maxent"] = MaxentModel(**_load_tuned("maxent", {}))
     except ImportError:
         logger.warning("elapid no instalado — MaxEnt excluido del ensemble.")
 
@@ -293,13 +324,17 @@ def _spatial_cv(
             )
             continue
 
+        # Escalado AJUSTADO SOLO con el train del fold (evita fuga de datos del
+        # test hacia el escalado; el scaler global solo se usa en el modelo final).
+        fold_scaler = StandardScaler().fit(X_tr)
+
         for algo, proto in models_proto.items():
             try:
                 import copy
                 model_fold = copy.deepcopy(proto)
-                _fit_model(model_fold, algo, X_tr, y_tr, scaler)
+                _fit_model(model_fold, algo, X_tr, y_tr, fold_scaler)
                 X_te_s = (
-                    scaler.transform(X_te) if (algo in _NEEDS_SCALING and scaler is not None) else X_te
+                    fold_scaler.transform(X_te) if algo in _NEEDS_SCALING else X_te
                 )
                 proba = _predict_proba(model_fold, X_te_s, algo)
                 tss, _ = _tss_youden(y_te, proba)
@@ -355,7 +390,7 @@ def _compute_weights(cv_tss: dict[str, float]) -> dict[str, float]:
     raw: dict[str, float] = {}
     for algo, tss in cv_tss.items():
         if tss >= config.TSS_MIN_ENSEMBLE:
-            raw[algo] = tss
+            raw[algo] = 1.0  # equal-weight de los modelos que superan el umbral
         else:
             raw[algo] = 0.0
             logger.info(
@@ -575,10 +610,13 @@ def process_species(slug: str, especie: str) -> bool:
     # ------------------------------------------------------------------
     # 8. Predicciones OOF del ensemble para Etapa 6
     # ------------------------------------------------------------------
-    # Calcular columna ensemble OOF ponderada
+    # Calcular columna ensemble OOF ponderada con normalización POR FILA: cada
+    # fila se divide por la suma de pesos de los algoritmos que SÍ la predijeron
+    # (antes se dividía por el peso total aunque a una fila le faltara un algo, y
+    # un 0.0 legítimo se marcaba como NaN). Solo es NaN si ningún algo la cubrió.
     oof_algo_cols = [c for c in _ALGO_NAMES if c in oof_df.columns]
     ens_oof = np.zeros(len(oof_df))
-    total_w = 0.0
+    row_w = np.zeros(len(oof_df))
     for algo in oof_algo_cols:
         w = tss_weights.get(algo, 0.0)
         if w == 0.0:
@@ -586,11 +624,10 @@ def process_species(slug: str, especie: str) -> bool:
         col_vals = oof_df[algo].values
         valid_mask = ~np.isnan(col_vals)
         ens_oof[valid_mask] += w * col_vals[valid_mask]
-        total_w += w
+        row_w[valid_mask] += w
 
-    if total_w > 0:
-        ens_oof /= total_w
-    ens_oof[ens_oof == 0.0] = np.nan  # marcar filas sin OOF como NaN
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ens_oof = np.where(row_w > 0, ens_oof / row_w, np.nan)
 
     oof_df["ensemble"] = ens_oof
 

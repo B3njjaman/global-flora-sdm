@@ -1,0 +1,10 @@
+{
+  "feature_types": [
+    "linear",
+    "quadratic",
+    "product"
+  ],
+  "beta_multiplier": 1.593,
+  "tau": 0.55,
+  "class_weights": 100.0
+}

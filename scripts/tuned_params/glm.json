@@ -1,0 +1,8 @@
+{
+  "C": 0.5,
+  "penalty": "l1",
+  "solver": "liblinear",
+  "class_weight": "balanced",
+  "max_iter": 2000,
+  "random_state": 42
+}

@@ -437,79 +437,84 @@ def select_predictors(
 # Spatial block CV
 # ---------------------------------------------------------------------------
 
-def assign_spatial_blocks(
+def assign_spatial_folds(
     lons: np.ndarray,
     lats: np.ndarray,
-    block_size_km: float = config.SPATIAL_BLOCK_KM,
+    presence: np.ndarray,
     n_folds: int = config.N_CV_FOLDS,
-    rng: Optional[np.random.Generator] = None,
+    seed: int = config.RANDOM_SEED,
 ) -> np.ndarray:
-    """Asigna cada punto a un fold de validación cruzada espacial por bloques.
+    """Asigna folds de CV espacial ADAPTATIVOS por clustering de presencias.
 
-    Método: grilla regular en grados (aproximada a block_size_km usando la
-    conversión 1° ≈ 111 km) sobre el rango lon/lat del conjunto de puntos.
-    Cada celda de la grilla recibe un bloque_id; los bloques se asignan
-    aleatoriamente (sin remplazo, con repetición cíclica si hay más bloques
-    que folds) a uno de los n_folds folds.
+    PROBLEMA del block-CV global previo (assign_spatial_blocks): una grilla fija
+    de ~750 km sobre el mundo repartía las presencias de una endémica de rango
+    estrecho en 1–2 bloques → 1–2 folds con presencias; el resto de folds quedaba
+    sin presencias y el CV se degeneraba (TSS=0 o espurio, predicciones OOF = NaN,
+    AUC/Brier/calibración incalculables).
 
-    Diseño
-    ------
-    - No requiere dependencias externas (spacv) pero produce bloques
-      equivalentes: grupos espacialmente contiguos de tamaño ~block_size_km.
-    - La asignación aleatoria de bloques a folds garantiza que cada fold
-      contenga bloques dispersos geográficamente → evita gradientes sistemáticos.
-    - Puntos fuera del rango global (lon ∈ [-180,180], lat ∈ [-90,90]) se
-      asignan al fold 0 por defecto.
+    SOLUCIÓN (leave-one-spatial-cluster-out): agrupar las PRESENCIAS en n_folds
+    clústeres espaciales con k-means sobre lon/lat (longitud corregida por
+    cos(lat) para distancias aprox. equidistantes); cada clúster = un fold. El
+    background se asigna al fold del centroide de presencias más cercano. Así:
+      - el tamaño de fold se ADAPTA al rango de la especie (estrecho → subregiones
+        de decenas de km; amplio → folds continentales),
+      - CADA fold contiene presencias y background → el CV no se degenera,
+      - los folds son espacialmente disjuntos → CV honesto (sin fuga espacial).
 
     Parámetros
     ----------
-    lons, lats     : arrays 1-D de coordenadas.
-    block_size_km  : tamaño aproximado del bloque en km.
-    n_folds        : número de folds.
-    rng            : generador numpy; si es None se crea uno con RANDOM_SEED.
+    lons, lats : arrays 1-D de coordenadas de TODOS los puntos (presencias + bg).
+    presence   : array 0/1 alineado con lons/lats.
+    n_folds    : nº de folds deseado.
+    seed       : semilla de k-means (reproducibilidad).
 
     Retorna
     -------
-    Array entero 1-D (misma longitud que lons/lats) con valores en [0, n_folds-1].
+    Array int 1-D (mismo largo) con fold ∈ [0, k-1], donde
+    k = min(n_folds, nº de localidades de presencia distintas).
     """
-    if rng is None:
-        rng = np.random.default_rng(config.RANDOM_SEED)
+    from sklearn.cluster import KMeans
 
-    # Tamaño de bloque en grados (1° ≈ 111.32 km)
-    block_deg = block_size_km / 111.32
+    lons = np.asarray(lons, dtype=float)
+    lats = np.asarray(lats, dtype=float)
+    presence = np.asarray(presence).astype(int)
 
-    lon_min, lon_max = -180.0, 180.0
-    lat_min, lat_max = -90.0, 90.0
+    pres_mask = presence == 1
+    n_pres = int(pres_mask.sum())
+    if n_pres == 0:
+        logger.warning("Sin presencias — todos los puntos al fold 0.")
+        return np.zeros(len(lons), dtype=np.int32)
 
-    n_lon_blocks = max(1, int(np.ceil((lon_max - lon_min) / block_deg)))
-    n_lat_blocks = max(1, int(np.ceil((lat_max - lat_min) / block_deg)))
-    n_blocks_total = n_lon_blocks * n_lat_blocks
+    # Escala de longitud por cos(lat medio de presencias) → distancias equidistantes
+    lat_c = np.deg2rad(float(np.nanmean(lats[pres_mask])))
+    cos_lat = max(float(np.cos(lat_c)), 1e-3)
+
+    def _proj(lo: np.ndarray, la: np.ndarray) -> np.ndarray:
+        return np.column_stack([lo * cos_lat, la])
+
+    Xp = _proj(lons[pres_mask], lats[pres_mask])
+    n_distinct = len(np.unique(Xp, axis=0))
+    k = int(min(n_folds, n_distinct))
+    if k < n_folds:
+        logger.warning(
+            "Solo %d localidades de presencia distintas — usando k=%d folds.",
+            n_distinct, k,
+        )
+
+    km = KMeans(n_clusters=k, random_state=seed, n_init=10).fit(Xp)
+
+    folds = np.empty(len(lons), dtype=np.int32)
+    folds[pres_mask] = km.labels_.astype(np.int32)
+
+    bg_mask = ~pres_mask
+    if bg_mask.any():
+        folds[bg_mask] = km.predict(_proj(lons[bg_mask], lats[bg_mask])).astype(np.int32)
 
     logger.info(
-        "Block CV: grilla %.0f km → %d×%d = %d bloques, %d folds.",
-        block_size_km, n_lon_blocks, n_lat_blocks, n_blocks_total, n_folds,
+        "CV espacial adaptativo: %d folds por clustering de %d presencias.",
+        k, n_pres,
     )
-
-    # Asignación aleatoria de bloque_id → fold_id
-    block_ids = np.arange(n_blocks_total)
-    shuffled = rng.permutation(block_ids)
-    block_to_fold = np.empty(n_blocks_total, dtype=int)
-    for i, bid in enumerate(shuffled):
-        block_to_fold[bid] = i % n_folds
-
-    # Calcular índice de bloque para cada punto
-    lon_idx = np.clip(
-        ((np.asarray(lons) - lon_min) / block_deg).astype(int),
-        0, n_lon_blocks - 1,
-    )
-    lat_idx = np.clip(
-        ((np.asarray(lats) - lat_min) / block_deg).astype(int),
-        0, n_lat_blocks - 1,
-    )
-    flat_block_id = lat_idx * n_lon_blocks + lon_idx
-
-    cv_folds = block_to_fold[flat_block_id]
-    return cv_folds
+    return folds
 
 
 # ---------------------------------------------------------------------------
@@ -648,15 +653,15 @@ def process_species(
     # ------------------------------------------------------------------
     # 6. Spatial block CV
     # ------------------------------------------------------------------
-    logger.info("  Asignando bloques espaciales (block_size=%d km, folds=%d)…",
-                config.SPATIAL_BLOCK_KM, config.N_CV_FOLDS)
+    logger.info("  Asignando folds espaciales adaptativos (clustering, folds=%d)…",
+                config.N_CV_FOLDS)
 
-    cv_folds = assign_spatial_blocks(
+    cv_folds = assign_spatial_folds(
         lons=df_full["lon"].values,
         lats=df_full["lat"].values,
-        block_size_km=config.SPATIAL_BLOCK_KM,
+        presence=df_full["presence"].values,
         n_folds=config.N_CV_FOLDS,
-        rng=rng,
+        seed=config.RANDOM_SEED,
     )
     df_full["cv_fold"] = cv_folds.astype(np.int32)
 

@@ -1,5 +1,11 @@
 # Resultados — Iteración 1
 
+> **NOTA: documento superado por la iteración 2.** Esta iteración 1 tenía tres
+> fallos corregidos después: pendiente (`slope`) errónea (~90° en casi todo el
+> planeta), ~45% del background en zonas polares, y CV espacial degenerado para
+> endémicas (métricas NaN). Los resultados vigentes están en
+> [`informe_modelo.md`](informe_modelo.md). Se conserva este archivo como registro.
+
 Síntesis de la primera iteración del pipeline SDM (`global-flora-sdm`): modelos
 ensemble entrenados, validación con CV espacial, e idoneidad del presente.
 El **forecast a 2050 queda diferido** como mejora (ver §"Trabajo futuro").

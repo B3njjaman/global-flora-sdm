@@ -83,14 +83,25 @@ global-flora-sdm/
 
 Sigue el protocolo ODMAP (Zurell et al. 2020). Validación con CV espacial (block CV 500–1000 km), métricas solo-presencia (Boyce/CBI), MESS para extrapolación, e hindcasting para validar el forecast. Detalle completo en [`docs/proyecto_sdm.md`](docs/proyecto_sdm.md).
 
-## Resultados (iteración 1)
+## Resultados (iteración 2)
 
-14 modelos ensemble entrenados y validados con CV espacial; mapas de **idoneidad
-del presente** (`outputs/maps/*_present_suitability.tif`) y figuras
-(`outputs/figures/`). Resumen de métricas y lectura crítica en
-[`docs/resultados_iter1.md`](docs/resultados_iter1.md); métricas completas por
-especie y algoritmo en `outputs/tables/metrics_all.csv`. El **forecast a 2050 está
-diferido** como mejora (cuello de botella: MESS global). Ver §Roadmap.
+14 modelos ensemble entrenados y validados con **CV espacial adaptativo** (todas
+las especies validables; antes 12/14 daban métricas NaN). Sobre la base saneada
+(pendiente corregida + background podado) y con la combinación equal-weight:
+
+- **Media: TSS 0.82 · AUC 0.94 · Boyce 0.68 · Brier 0.04.**
+- **El ensemble iguala a MaxEnt** (TSS 0.822 vs 0.826) y lo supera levemente en
+  **AUC** (0.944 vs 0.939), ganándole en 8/14 especies, con el plus de robustez e
+  incertidumbre entre algoritmos.
+- Excepción honesta: *Schinus areira* (introducida) no transfiere bien entre
+  regiones (Boyce negativo) — requiere marco de especies invasoras.
+
+Informe completo en [`docs/informe_modelo.md`](docs/informe_modelo.md); métricas
+por especie y algoritmo en `outputs/tables/metrics_all.csv`; mapas en
+`outputs/maps/*_present_suitability.tif` y figuras en `outputs/figures/`.
+La lectura de la iteración 1 (superada) queda en
+[`docs/resultados_iter1.md`](docs/resultados_iter1.md). El **forecast a 2050 sigue
+diferido** como mejora. Ver §Roadmap.
 
 ## Licencia
 
