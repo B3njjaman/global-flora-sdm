@@ -37,7 +37,7 @@ La especificacion metodologica completa esta en [`docs/proyecto_sdm.md`](docs/pr
 Las etapas son **secuenciales**: cada una consume las salidas de las anteriores.
 
 > **Estado de la iteracion 3.** Se entregan: ocurrencias limpias (filtradas a Chile),
-> capas alineadas, **14 modelos ensemble calibrados regionalmente**, **validacion completa**
+> capas alineadas, **13 modelos ensemble calibrados regionalmente** (atriplex excluida por n insuficiente), **validacion completa**
 > (TSS/AUC/Boyce, CV espacial) e **idoneidad del presente** (mapas GeoTIFF recortados a
 > Sudamerica + figuras). El **forecast a 2050** esta implementado y recortado a Sudamerica,
 > pero **se difiere como mejora**: el calculo de MESS aun requiere optimizacion adicional.
@@ -83,66 +83,83 @@ Sigue el protocolo ODMAP (Zurell et al. 2020). Validación con CV espacial (bloc
 
 ## Resultados (iteracion 3 — calibracion regional Chile)
 
-14 modelos ensemble entrenados y validados con **CV espacial adaptativo**, calibrados
-dentro de Chile continental (ensemble equal-weight).
+**13 modelos** ensemble entrenados y validados con CV espacial adaptativo, calibrados
+dentro de Chile continental (ensemble equal-weight). *(atriplex_semibaccata, n=8, queda
+excluida: por debajo del piso de 50 presencias — ver nota al final.)*
 
-### Metricas medias (CV espacial, ensemble equal-weight)
+### Como se reporta el desempeño (lee esto antes de la tabla)
 
-| Iteracion | AUC | TSS | Boyce | Nota |
+Existen tres formas de resumir el mismo CV espacial, y dan numeros muy distintos:
+
+| Forma | AUC | TSS | Que es | Uso |
 |---|---|---|---|---|
-| 2 (global, superada) | 0.944 | 0.822 | 0.68 | Infladas: "Atacama vs. planeta" |
-| **3 (regional Chile)** | **0.884** | **0.707** | **0.42** | **Reales: nicho dentro de Chile** |
+| **Por fold (media ± SD)** | **0.77** | **0.26** | promedio de las metricas calculadas fold-a-fold | **el numero honesto de transferencia espacial** |
+| Pooled @ umbral de entrenamiento | 0.89 | 0.50 | metricas sobre el OOF agrupado, umbral fijado en entrenamiento | optimista (el pooling mezcla regiones) |
+| ~~Pooled @ umbral optimizado sobre OOF~~ | ~~0.88~~ | ~~0.71~~ | umbral elegido mirando las etiquetas de evaluacion | **inflado — ya no se reporta** |
 
-**Las metricas bajaron a proposito.** No es una regresion: el inflado artificial
-desaparecio. Al calibrar contra background planetario el modelo aprendia a distinguir
-Chile del resto del mundo (tarea trivial), lo que producía AUC ~0.99 ecologicamente
-irrelevantes. Ahora la pregunta es "donde dentro de Chile es habitable para esta
-especie" — un problema genuinamente dificil. El **Boyce (CBI)** es la metrica mas
-honesta para datos solo-presencia; las demas son complementarias.
+La iteracion 3 reportaba antes la fila tachada (TSS 0.71): el umbral se optimizaba
+sobre los mismos datos de evaluacion, lo que sobrestimaba el TSS de forma sistematica.
+Corregido. **El encabezado honesto es: AUC 0.77 · TSS 0.26 · Boyce 0.44** (CV espacial
+por fold, 13 especies). El **Boyce (CBI)** es la metrica mas honesta para datos
+solo-presencia y la que mas pesa en la interpretacion.
 
-### Por que bajaron los numeros y por que eso es correcto
+> Comparacion iter. 2 (global) vs iter. 3 (Chile): el alcance global producia AUC ~0.94
+> porque distinguir el clima de una endemica chilena del de Siberia es trivial. Acotar a
+> Chile (y reportar por fold sin trucar el umbral) baja los numeros: eso es honestidad,
+> no regresion.
 
-- **Antes:** background = mundo entero. El modelo separaba puntos en Chile de
-  pseudo-ausencias en Siberia o el Pacifico -> discriminacion trivial.
-- **Ahora:** background = Chile. El modelo debe aprender el nicho dentro de un pais
-  con gradiente latitudinal y altitudinal real -> problema ecologico verdadero.
-- La bajada de metricas refleja honestidad, no error de implementacion.
+### Resultados por especie (CV espacial por fold + Boyce)
 
-### Resultados por especie
+Ordenadas por Boyce (reliabilidad solo-presencia):
 
-| Especie | n_pres (Chile) | AUC | TSS | Boyce | Calidad |
-|---|---|---|---|---|---|
-| skytanthus_acutus | 117 | 0.952 | 0.860 | +0.79 | Solida |
-| krameria_cistoidea | 234 | 0.910 | 0.703 | +0.89 | Solida |
-| nolana_sedifolia | 74 | 0.929 | 0.775 | +0.79 | Solida |
-| nolana_divaricata | 64 | 0.929 | 0.798 | +0.77 | Solida |
-| eulychnia_acida | 165 | 0.951 | 0.823 | +0.59 | Buena |
-| oxalis_gigantea | 99 | 0.950 | 0.797 | +0.59 | Buena |
-| miqueliopuntia_miquelii | 136 | 0.958 | 0.896 | +0.49 | Buena |
-| encelia_canescens | 209 | 0.938 | 0.812 | +0.36 | Aceptable |
-| neltuma_chilensis | 84 | 0.855 | 0.647 | +0.19 | Floja (mapa poco confiable) |
-| cumulopuntia_sphaerica | 111 | 0.750 | 0.393 | +0.15 | Floja (mapa poco confiable) |
-| pleurophora_pungens | 59 | 0.743 | 0.561 | -0.23 | Floja (mapa NO confiable) |
-| senna_cumingii | 114 | 0.937 | 0.782 | -0.66 | Floja (mapa NO confiable) |
-| schinus_areira* | 72 | 0.803 | 0.492 | +0.98 | Inestable (ver nota) |
-| atriplex_semibaccata* | 8 | 0.770 | 0.559 | +0.23 | Sin modelar (ver nota) |
-
-*\* Especies introducidas. Sus registros GBIF son globales; al acotar a Chile quedan
-con muy pocas presencias. **atriplex_semibaccata (n=8) esta por debajo del umbral
-minimo de 50 presencias y NO deberia modelarse**; schinus_areira (n=72) es inestable.
-Sus mapas deben interpretarse con extrema cautela o descartarse.*
+| Especie | n | AUC fold ±SD | TSS fold ±SD | Boyce | Lectura |
+|---|--:|--:|--:|--:|---|
+| krameria_cistoidea | 234 | 0.71±0.07 | 0.10±0.13 | +0.89 | confiable (Boyce alto; OJO TSS-transfer bajo) |
+| skytanthus_acutus | 117 | 0.80±0.17 | 0.35±0.31 | +0.79 | confiable |
+| nolana_sedifolia | 74 | 0.76±0.17 | 0.38±0.27 | +0.79 | confiable |
+| nolana_divaricata | 64 | 0.74±0.22 | 0.10±0.15 | +0.77 | confiable (Boyce alto; OJO TSS-transfer bajo) |
+| oxalis_gigantea | 99 | 0.83±0.20 | 0.56±0.32 | +0.59 | buena |
+| eulychnia_acida | 165 | 0.79±0.13 | 0.49±0.22 | +0.59 | buena |
+| miqueliopuntia_miquelii | 136 | 0.84±0.12 | 0.12±0.10 | +0.49 | buena (transfer debil) |
+| encelia_canescens | 209 | 0.74±0.14 | 0.28±0.34 | +0.36 | aceptable |
+| neltuma_chilensis | 84 | 0.75±0.12 | 0.31±0.25 | +0.19 | floja (mapa poco confiable) |
+| cumulopuntia_sphaerica | 111 | 0.68±0.22 | 0.11±0.09 | +0.15 | floja (mapa poco confiable) |
+| pleurophora_pungens | 59 | 0.79±0.14 | 0.00±0.01 | −0.23 | NO confiable |
+| senna_cumingii | 114 | 0.76±0.09 | 0.27±0.14 | −0.66 | NO confiable (no transfiere) |
+| schinus_areira* | 72 | 0.81±0.08 | 0.26±0.25 | +0.98 | introducida, n bajo → Boyce artefactual |
 
 ### Lectura honesta del ensemble
 
-- **Sólidas (Boyce alto):** krameria (0.89), skytanthus (0.79), nolana divaricata
-  (0.77), nolana sedifolia (0.79). Sus mapas son ecologicamente interpretables.
-- **Buenas:** eulychnia y oxalis (Boyce 0.59). Mapas utiles con cautela normal.
-- **Expuestas como flojas** (antes ocultas por el inflado): cumulopuntia (Boyce 0.15),
-  neltuma (0.19), pleurophora (-0.23), senna (-0.66). Sus mapas NO son confiables
-  y no deben usarse para toma de decisiones sin mejora de datos.
-- **Marco roto por datos insuficientes en Chile:** atriplex (n=8, debajo del umbral
-  minimo), schinus (n=72, inestable como introducida). Requieren marco de invasoras
-  o datos adicionales de Chile.
+- **Confiables (Boyce ≥ 0.7):** krameria, skytanthus, nolana sedifolia, nolana
+  divaricata. Mapas ecologicamente interpretables. *Caveat:* krameria y nolana
+  divaricata tienen Boyce alto pero TSS-transfer por fold ~0.10 (alta SD entre
+  subregiones): el mapa es coherente en agregado pero inestable localmente.
+- **Buenas (Boyce 0.35–0.65):** oxalis, eulychnia, miqueliopuntia, encelia. Utiles
+  con cautela normal.
+- **Flojas / no confiables (Boyce ≤ 0.2 o negativo):** neltuma (0.19),
+  cumulopuntia (0.15), pleurophora (−0.23), senna (−0.66). Sus mapas **no** deben
+  usarse para toma de decisiones sin mejora de datos.
+- **Introducida con n bajo:** schinus (n=72): Boyce 0.98 es artefacto de n pequeño,
+  no señal real. Requiere marco de especie invasora.
+
+### Ensemble vs MaxEnt — ¿valió la pena el ensemble?
+
+Con las metricas honestas por fold, **el ensemble no le gana claramente a MaxEnt solo**:
+
+| Metrica (media por fold) | Ensemble | MaxEnt solo | Gana ensemble en |
+|---|--:|--:|--:|
+| TSS | 0.26 | **0.34** | 5/13 especies |
+| AUC | **0.77** | 0.75 | 9/13 especies |
+
+MaxEnt solo es **mejor en TSS**; el ensemble empata/gana marginalmente en AUC. El valor
+del ensemble aqui es de **robustez** (no depender de un solo algoritmo, menor varianza
+entre especies), no de un salto de desempeño. El comentario previo de que el ensemble
+equal-weight "supera a MaxEnt" se basaba en el TSS inflado y queda corregido.
+
+> **Sobre las probabilidades:** la calibracion es pobre (`calib_slope` ≈ 0, ver
+> `metrics_all.csv`). Las salidas deben leerse como **idoneidad relativa**, no como
+> probabilidades; el Brier bajo (~0.04) es artefacto de la baja prevalencia, no señal
+> de buena calibracion.
 
 Informe completo en [`docs/informe_modelo.md`](docs/informe_modelo.md); metricas
 por especie y algoritmo en `outputs/tables/metrics_all.csv`; mapas (recortados a
@@ -150,7 +167,14 @@ Sudamerica) en `outputs/maps/*_present_suitability.tif` y figuras en
 `outputs/figures/`.
 Los resultados de la iteracion 2 (alcance global, metricas infladas, superada) quedan
 en [`docs/resultados_iter1.md`](docs/resultados_iter1.md) como referencia historica.
-El **forecast a 2050 sigue diferido** como mejora pendiente.
+
+\* *atriplex_semibaccata (n=8 en Chile) está por debajo del piso de 50 presencias y
+**no se modela** (excluida en `config.classify_species` y en el reporte). schinus_areira
+(n=72), introducida, se reporta pero su mapa no debe usarse para inferir invasividad.*
+
+El **forecast a 2050 está calculado** (`outputs/maps/_forecast_deferred/`) pero **no
+certificado**: falta el MESS de proyeccion Chile→Sudamerica y la validacion por
+hindcasting. No presentar proyecciones de cambio climatico hasta cerrar eso.
 
 ## Licencia
 

@@ -156,6 +156,12 @@ con el umbral de training mientras que el de cada algoritmo usaba el umbral ópt
 sobre OOF. Se unificó (ambos al umbral maxTSS sobre OOF) para que la comparación
 ensemble vs MaxEnt sea justa.
 
+> **Corrección posterior (revisión 3.1):** unificar "al umbral óptimo sobre OOF" fue
+> un error — optimizar el umbral sobre el propio conjunto de evaluación infla el TSS.
+> Se revirtió: el TSS del ensemble se reporta al umbral de **entrenamiento**, y el
+> encabezado pasó a ser el **TSS por fold (media ± SD)**. Con eso, el TSS medio honesto
+> es 0.26, no 0.82/0.707, y el ensemble deja de "superar" a MaxEnt.
+
 ---
 
 ## 6. Resultado final (CV espacial, ensemble equal-weight)
@@ -302,28 +308,35 @@ Las métricas **bajaron** respecto a iteración 2. Eso es la señal correcta: an
 estaban infladas por el contraste geográfico trivial; ahora el modelo tiene que
 discriminar dentro del territorio donde las especies realmente viven.
 
-**Medias (CV espacial):**
+**Medias (CV espacial):** *(iter. 3 = numeros honestos por fold, revision 3.1)*
 
-| Metrica | Iteracion 2 | Iteracion 3 |
+| Metrica | Iteracion 2 (global) | Iteracion 3 (Chile, por fold) |
 |---|---:|---:|
-| AUC     | 0.944 | 0.884 |
-| TSS     | 0.822 | 0.707 |
-| Boyce   |  0.68 |  0.42 |
+| AUC     | 0.944 | 0.77 |
+| TSS     | 0.822 | 0.26 |
+| Boyce   |  0.68 |  0.44 |
 
-**Por especie (iteracion 3):**
+> Nota 3.1: el TSS 0.707 que figuraba aqui era el pooled con umbral optimizado sobre
+> OOF (inflado). Corregido a 0.26 (media por fold, transferencia espacial real).
+> atriplex (n=8) se excluye del modelado.
 
-| Especie | TSS | AUC | Boyce | Nota |
+**Por especie (iteracion 3, por fold + Boyce; 13 especies):**
+
+| Especie | AUC fold | TSS fold | Boyce | Nota |
 |---|---:|---:|---:|---|
-| krameria_cistoidea      | 0.89 | — | — | solida |
-| skytanthus_acutus       | 0.79 | — | — | solida |
-| nolana_divaricata       | 0.77 | — | — | solida |
-| nolana_sedifolia        | 0.79 | — | — | solida |
-| cumulopuntia_sphaerica  |  —   | — | 0.15 | Boyce bajo, modelo debil |
-| neltuma_chilensis       |  —   | — | 0.19 | Boyce bajo, modelo debil |
-| pleurophora_pungens     |  —   | — | -0.23 | no transfiere |
-| senna_cumingii          |  —   | — | -0.66 | no transfiere |
-| atriplex_semibaccata    | —    | — | — | n=8 en Chile (< umbral 50) |
-| schinus_areira          | —    | — | — | n=72 en Chile; especie introducida |
+| krameria_cistoidea      | 0.71 | 0.10 | +0.89 | confiable (transfer local inestable) |
+| skytanthus_acutus       | 0.80 | 0.35 | +0.79 | confiable |
+| nolana_sedifolia        | 0.76 | 0.38 | +0.79 | confiable |
+| nolana_divaricata       | 0.74 | 0.10 | +0.77 | confiable (transfer local inestable) |
+| oxalis_gigantea         | 0.83 | 0.56 | +0.59 | buena |
+| eulychnia_acida         | 0.79 | 0.49 | +0.59 | buena |
+| miqueliopuntia_miquelii | 0.84 | 0.12 | +0.49 | buena (transfer debil) |
+| encelia_canescens       | 0.74 | 0.28 | +0.36 | aceptable |
+| neltuma_chilensis       | 0.75 | 0.31 | +0.19 | floja |
+| cumulopuntia_sphaerica  | 0.68 | 0.11 | +0.15 | floja |
+| pleurophora_pungens     | 0.79 | 0.00 | −0.23 | no transfiere |
+| senna_cumingii          | 0.76 | 0.27 | −0.66 | no transfiere |
+| schinus_areira          | 0.81 | 0.26 | +0.98 | introducida, n bajo → Boyce artefactual |
 
 Las especies introducidas (*Atriplex semibaccata*, *Schinus areira*) colapsaron por
 datos: al recortar los registros GBIF globales a Chile, *atriplex_semibaccata* quedó

@@ -934,11 +934,13 @@ def validate_species(slug: str) -> dict[str, Any]:
     # 5. Discriminación (ensemble)
     # -----------------------------------------------------------------
     logger.info("  Calculando discriminación...")
-    # TSS del ensemble al umbral OPTIMO-OOF (mismo criterio que por algoritmo, ver
-    # abajo) para que la comparación ensemble vs MaxEnt sea justa. El umbral de
-    # training (threshold_maxTSS) se conserva aparte para los mapas binarios.
-    thr_ens_disc, _ = _max_tss_threshold(y_oof, y_prob_ens)
-    disc = compute_discrimination_metrics(y_oof, y_prob_ens, thr_ens_disc)
+    # TSS del ensemble al umbral derivado en ENTRENAMIENTO (thr_maxtss), aplicado a
+    # las predicciones out-of-fold. NO se re-optimiza el umbral sobre el propio OOF:
+    # hacerlo (versión previa, _max_tss_threshold(y_oof, y_prob_ens)) elegía el
+    # umbral mirando las etiquetas de evaluación y sobrestimaba el TSS de forma
+    # sistemática (p. ej. nolana_divaricata 0.80 vs 0.12 honesto). El número honesto
+    # de transferencia espacial es el TSS por fold (media ± SD), reportado abajo.
+    disc = compute_discrimination_metrics(y_oof, y_prob_ens, thr_maxtss)
     for k, v in disc.items():
         row[f"ens_{k}"] = v
     logger.info("  AUC=%.4f  TSS=%.4f  AUC-PR=%.4f  F1=%.4f",
@@ -1268,13 +1270,29 @@ def parse_args() -> argparse.Namespace:
 
 
 def discover_slugs() -> list[str]:
-    """Descubre slugs disponibles buscando archivos .parquet en SPECIES_DATASETS."""
+    """Descubre slugs disponibles buscando archivos .parquet en SPECIES_DATASETS.
+
+    Excluye las especies por debajo del piso de presencias (MIN_RECORDS_TO_MODEL):
+    un modelo con n insuficiente (p. ej. atriplex_semibaccata, n=8 en Chile) no es
+    interpretable y no debe aparecer en las métricas del entregable. El dataset y el
+    .joblib pueden seguir en disco, pero no se reportan.
+    """
     parquets = list(config.SPECIES_DATASETS.glob("*.parquet"))
-    # Excluir archivos de cv_preds
-    slugs = [
-        p.stem for p in parquets
-        if not p.stem.endswith("_cv_preds") and not p.stem.endswith("_predictors")
-    ]
+    slugs: list[str] = []
+    for p in parquets:
+        if p.stem.endswith("_cv_preds") or p.stem.endswith("_predictors"):
+            continue
+        try:
+            n_pres = int((pd.read_parquet(p, columns=["presence"])["presence"] == 1).sum())
+        except Exception:
+            n_pres = config.MIN_RECORDS_TO_MODEL  # ante la duda, no excluir
+        if n_pres < config.MIN_RECORDS_TO_MODEL:
+            logger.warning(
+                "  '%s' excluida del reporte: n=%d < piso de %d presencias.",
+                p.stem, n_pres, config.MIN_RECORDS_TO_MODEL,
+            )
+            continue
+        slugs.append(p.stem)
     return sorted(slugs)
 
 

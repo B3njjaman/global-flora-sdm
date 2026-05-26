@@ -182,15 +182,22 @@ Contrato canónico de artefactos del pipeline SDM (global-flora-sdm)
 def classify_species(counts: dict[str, int]) -> dict[str, str]:
     """Asigna cada especie a un grupo A/B/C a partir de sus conteos.
 
-    A = cosmopolita/introducida; B = endémica con datos suficientes (>=50);
-    C = pocos registros (<50, no modelar individualmente).
+    A = cosmopolita/introducida con datos suficientes; B = endémica con datos
+    suficientes (>=50); C = pocos registros (<50, no modelar individualmente).
+
+    El piso de n (MIN_RECORDS_TO_MODEL) tiene PRECEDENCIA sobre el grupo A: una
+    especie introducida con muy pocos registros en el área de calibración (p. ej.
+    Atriplex semibaccata, n=8 en Chile) NO debe modelarse individualmente, aunque
+    sea cosmopolita. Antes el grupo A se modelaba siempre, lo que producía un
+    modelo sin sentido (n=8) que igual aparecía en las métricas. Ahora se clasifica
+    como C y queda fuera del modelado.
     """
     groups: dict[str, str] = {}
     for sp, n in counts.items():
-        if sp in GROUP_A_COSMOPOLITAN:
-            groups[sp] = "A"
-        elif n < MIN_RECORDS_TO_MODEL:
+        if n < MIN_RECORDS_TO_MODEL:
             groups[sp] = "C"
+        elif sp in GROUP_A_COSMOPOLITAN:
+            groups[sp] = "A"
         else:
             groups[sp] = "B"
     return groups

@@ -28,11 +28,16 @@ El pipeline está preparado para proyectar a 2050 (CMIP6), paso aún no ejecutad
 intersección tierra; respaldo: bounding-box de Chile). Esto descarta registros
 fuera del país y reduce el n disponible frente a la iteración anterior.
 
-**Background (pseudo-ausencias):** ~9.500 puntos muestreados **dentro de Chile**,
-no en todo el planeta. El fondo representa las condiciones ambientales disponibles
-en el territorio de calibración; comparar presencias contra ese fondo mide el nicho
-real de la especie en su país de origen, no contra zonas tropicales o polares que
-jamás formarían parte de su rango.
+**Background (pseudo-ausencias):** ~18.750 puntos (de 20.000 solicitados; el resto
+cae con NaN en algún predictor) muestreados **dentro de Chile**, no en todo el planeta.
+El fondo representa las condiciones ambientales disponibles en el territorio de
+calibración. *Matiz pendiente:* el "target-group" no corrige sesgo de muestreo como
+debería — el suavizado de Laplace en `04_extraccion.py` aplastó la señal de esfuerzo
+GBIF, así que el background es prácticamente aleatorio dentro de Chile. Además, las
+presencias ocupan una franja estrecha (lat ≈ −25 a −35) mientras el background abarca
+todo el país (hasta Patagonia): distinguir "norte árido" de "sur templado" sigue siendo
+relativamente fácil, lo que aún infla algo la discriminación. El área accesible honesta
+sería un *buffer* alrededor de las presencias, no Chile entero.
 
 **Ensemble de 5 algoritmos** (cada uno con hiperparámetros tuneados vía CV):
 GLM (regresión logística L1), GAM (pyGAM), Random Forest, LightGBM, MaxEnt (elapid).
@@ -55,36 +60,43 @@ la especie**, de modo que cada fold contiene presencias — esto rescató a las 
 endémicas que antes caían en 1–2 bloques y daban métricas no calculables (NaN).
 
 Métricas: TSS y AUC (discriminación), Boyce/CBI (solo-presencia), Brier
-(calibración), SD entre folds (robustez), MESS (extrapolación). El TSS se reporta
-al umbral maxTSS sobre OOF, el **mismo criterio para el ensemble y para cada
-algoritmo**, de modo que las comparaciones son justas.
+(calibración), SD entre folds (robustez), MESS (extrapolación).
 
-Nota: el refinamiento del umbral maxTSS-sobre-OOF y la mejora del CV adaptativo
-quedan como trabajo futuro pendiente; no se tocaron en esta iteración.
+**Cómo se reporta el TSS (corregido en esta revisión).** El número honesto de
+transferencia espacial es el **TSS/AUC por fold (media ± SD)**. El TSS pooled se
+reporta al **umbral fijado en entrenamiento** aplicado al OOF. Antes se optimizaba el
+umbral sobre el propio OOF (mirando las etiquetas de evaluación), lo que sobrestimaba
+el TSS de forma sistemática (p. ej. nolana_divaricata aparecía con TSS 0.80 cuando su
+TSS-transfer real es 0.12). Eso quedó eliminado: `06_validacion.py` ya no re-optimiza
+el umbral sobre el conjunto de evaluación.
 
-## 4. Resultados (CV espacial, ensemble, calibrado a Chile)
+## 4. Resultados (CV espacial por fold, ensemble, calibrado a Chile)
 
-| Especie | n_pres (Chile) | AUC | TSS | Boyce | Lectura |
-|---|---:|---:|---:|---:|---|
-| krameria_cistoidea | 234 | 0.910 | 0.703 | +0.89 | solida |
-| skytanthus_acutus | 117 | 0.952 | 0.860 | +0.79 | solida |
-| nolana_sedifolia | 74 | 0.929 | 0.775 | +0.79 | solida |
-| nolana_divaricata | 64 | 0.929 | 0.798 | +0.77 | solida |
-| eulychnia_acida | 165 | 0.951 | 0.823 | +0.59 | buena |
-| oxalis_gigantea | 99 | 0.950 | 0.797 | +0.59 | buena |
-| miqueliopuntia_miquelii | 136 | 0.958 | 0.896 | +0.49 | buena |
-| encelia_canescens | 209 | 0.938 | 0.812 | +0.36 | buena |
-| neltuma_chilensis | 84 | 0.855 | 0.647 | +0.19 | debil (Boyce bajo) |
-| atriplex_semibaccata | 8 | 0.770 | 0.559 | +0.23 | n insuficiente |
-| cumulopuntia_sphaerica | 111 | 0.750 | 0.393 | +0.15 | debil (Boyce bajo) |
-| pleurophora_pungens | 59 | 0.743 | 0.561 | -0.23 | no confiable |
-| schinus_areira | 72 | 0.803 | 0.492 | +0.98 | introducida, n inestable |
-| senna_cumingii | 114 | 0.937 | 0.782 | -0.66 | no transfiere |
+13 especies (atriplex excluida, n=8). AUC y TSS son **media ± SD entre folds**
+(transferencia espacial honesta); Boyce es el CBI sobre OOF. Ordenadas por Boyce:
 
-**Media: AUC 0.884 · TSS 0.707 · Boyce 0.42.**
+| Especie | n | AUC fold ±SD | TSS fold ±SD | Boyce | Lectura |
+|---|--:|--:|--:|--:|---|
+| krameria_cistoidea | 234 | 0.71±0.07 | 0.10±0.13 | +0.89 | confiable (Boyce alto; transfer local inestable) |
+| skytanthus_acutus | 117 | 0.80±0.17 | 0.35±0.31 | +0.79 | confiable |
+| nolana_sedifolia | 74 | 0.76±0.17 | 0.38±0.27 | +0.79 | confiable |
+| nolana_divaricata | 64 | 0.74±0.22 | 0.10±0.15 | +0.77 | confiable (Boyce alto; transfer local inestable) |
+| oxalis_gigantea | 99 | 0.83±0.20 | 0.56±0.32 | +0.59 | buena |
+| eulychnia_acida | 165 | 0.79±0.13 | 0.49±0.22 | +0.59 | buena |
+| miqueliopuntia_miquelii | 136 | 0.84±0.12 | 0.12±0.10 | +0.49 | buena (transfer débil) |
+| encelia_canescens | 209 | 0.74±0.14 | 0.28±0.34 | +0.36 | aceptable |
+| neltuma_chilensis | 84 | 0.75±0.12 | 0.31±0.25 | +0.19 | débil (Boyce bajo) |
+| cumulopuntia_sphaerica | 111 | 0.68±0.22 | 0.11±0.09 | +0.15 | débil (Boyce bajo) |
+| pleurophora_pungens | 59 | 0.79±0.14 | 0.00±0.01 | −0.23 | no confiable |
+| senna_cumingii | 114 | 0.76±0.09 | 0.27±0.14 | −0.66 | no transfiere |
+| schinus_areira | 72 | 0.81±0.08 | 0.26±0.25 | +0.98 | introducida, n bajo → Boyce artefactual |
 
-Las métricas son inferiores a las de la iteración 2 (AUC 0.944 / TSS 0.822 /
-Boyce 0.68) **a propósito**: ese descenso indica que se eliminó el inflado artificial.
+**Media (por fold): AUC 0.77 · TSS 0.26 · Boyce 0.44.**
+
+La SD entre folds es alta (a menudo > el propio TSS): el modelo funciona en unas
+subregiones de Chile y no en otras. El pooled-OOF con umbral de entrenamiento da una
+cifra más alta (AUC 0.89 · TSS 0.50) pero el pooling mezcla regiones y sobrestima la
+transferencia; por eso el encabezado honesto es la cifra por fold.
 
 ## 5. Por qué las métricas bajaron (y por qué eso es correcto)
 
@@ -144,16 +156,27 @@ en unas subregiones que en otras. Interpretar el TSS medio con esa varianza en m
 
 ## 8. Comparación iteraciones
 
-| Métrica | Iter 2 (global) | Iter 3 (Chile) | Cambio |
+| Métrica | Iter 2 (global) | Iter 3 (Chile, por fold) | Nota |
 |---|---:|---:|---|
-| AUC medio | 0.944 | 0.884 | -0.060 (inflado eliminado) |
-| TSS medio | 0.822 | 0.707 | -0.115 (idem) |
-| Boyce medio | 0.68 | 0.42 | -0.26 (idem) |
+| AUC medio | 0.944 | 0.77 | doble corrección: alcance regional + reporte por fold |
+| TSS medio | 0.822 | 0.26 | el TSS 0.71 que se reportaba antes usaba umbral optimizado sobre OOF (inflado) |
+| Boyce medio | 0.68 | 0.44 | métrica solo-presencia, la más exigente |
+
+La caída de iter 2 a iter 3 tiene dos causas: (a) acotar el background a Chile elimina
+el contraste trivial "Chile vs. planeta"; (b) reportar por fold y sin trucar el umbral
+expone la transferencia espacial real. Ambas son honestidad, no regresión.
 
 ## 9. Limitaciones y siguientes pasos
 
-- **Forecast 2050 (CMIP6)** aún no ejecutado/validado: no presentar proyecciones de
-  cambio climático todavía.
+- **Forecast 2050 (CMIP6)**: los rasters **están calculados** (en
+  `outputs/maps/_forecast_deferred/`) pero **no certificados** — falta el MESS de
+  proyección Chile→Sudamérica y la validación por hindcasting. No presentar
+  proyecciones de cambio climático hasta cerrar eso.
+- **Probabilidades mal calibradas:** `calib_slope` ≈ 0 en casi todas las especies. Las
+  salidas son índices de **idoneidad relativa**, no probabilidades; el Brier bajo
+  (~0.04) es artefacto de la baja prevalencia, no señal de buena calibración.
+- **Ensemble ≈ MaxEnt:** con métricas por fold, MaxEnt solo iguala o supera al ensemble
+  en TSS (0.34 vs 0.26). El ensemble aporta robustez, no un salto de desempeño.
 - Sin validación por hindcasting (transferencia temporal).
 - **Baja transferibilidad revelada**: acotar a Chile expuso que cumulopuntia,
   neltuma, pleurophora y senna tienen Boyce bajo/negativo. Sus mapas requieren

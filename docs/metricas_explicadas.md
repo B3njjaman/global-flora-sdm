@@ -18,21 +18,25 @@ Estos son los resultados promedio de nuestro modelo sobre 14 especies, medidos
 con validacion cruzada espacial (la forma honesta de evaluar, explicada mas
 abajo).
 
+Todos los numeros son **media entre folds** de la validacion cruzada espacial
+(13 especies; la forma honesta de medir transferencia, explicada mas abajo).
+
 | Metrica | Que mide en una frase | Rango | Umbral "bueno" | Nuestro modelo |
 |---|---|---|---|---|
-| TSS | Aciertos balanceando presencias y ausencias | -1 a 1 | > 0.7 bueno | 0.707 |
-| AUC | Capacidad de ordenar sitios buenos por encima de malos | 0.5 a 1 | > 0.8 bueno | 0.884 |
-| Boyce / CBI | Si las zonas mas idoneas concentran mas presencias reales | -1 a 1 | cercano a 1 | 0.42 |
-| Brier | Error de las probabilidades (calibracion) | 0 a 1 | cuanto menor mejor | 0.04 |
+| TSS | Aciertos balanceando presencias y ausencias | -1 a 1 | > 0.5 aceptable, > 0.7 bueno | **0.26** (flojo) |
+| AUC | Capacidad de ordenar sitios buenos por encima de malos | 0.5 a 1 | > 0.8 bueno | **0.77** (aceptable) |
+| Boyce / CBI | Si las zonas mas idoneas concentran mas presencias reales | -1 a 1 | cercano a 1 | **0.44** (mixto) |
+| Brier | Error de las probabilidades (calibracion) | 0 a 1 | cuanto menor mejor | 0.04* |
 | MESS | Donde el modelo extrapola (predice fuera de lo que vio) | mapa | --- | mapa diagnostico |
 
-Lectura rapida: el modelo discrimina bien (TSS y AUC en rango bueno bajo
-background regional), esta bien calibrado (Brier muy bajo) y concentra las
-presencias reales en las zonas que marca como idoneas (Boyce positivo). Las
-metricas bajaron respecto a iteraciones anteriores con background global: eso
-es esperado y saludable, porque el background planetario inflaba artificialmente
-la discriminacion. Ninguna de estas metricas se reporta sola; mas adelante
-explicamos por que.
+Lectura rapida honesta: el modelo **ordena** sitios de forma aceptable (AUC 0.77),
+pero su **acierto balanceado transfiriendo a zonas nuevas es flojo** (TSS 0.26, con
+mucha variabilidad entre subregiones), y la coherencia solo-presencia (Boyce 0.44) es
+**mixta**: buena en 4–6 especies, mala o negativa en 4. *El Brier (0.04*) parece
+excelente pero **engaña**: es bajo porque casi todo el territorio es "ausencia" y
+predecir valores bajos en todas partes ya da poco error. La calibracion real (slope ≈ 0)
+es pobre — los numeros son **idoneidad relativa, no probabilidades**. Ninguna metrica se
+reporta sola; mas adelante explicamos por que.
 
 ---
 
@@ -68,7 +72,10 @@ nuevo, diga: "aqui es muy probable encontrarla" o "aqui no".
 - **Rango:** de -1 a 1. Un 0 equivale a adivinar al azar; valores negativos
   serian peor que el azar.
 - **Que valor es bueno:** mayor a 0.5 es aceptable; mayor a 0.7 es bueno.
-- **Nuestro modelo:** media de **0.707**, en territorio bueno (iteracion 3, background regional Chile).
+- **Nuestro modelo:** media por fold de **0.26** — flojo, y con SD alta (varía mucho
+  entre subregiones de Chile). Antes se reportaba 0.707, pero ese número usaba un umbral
+  elegido mirando las propias respuestas del examen (optimizado sobre los datos de
+  evaluación), lo que infla el TSS. Corregido: el 0.26 es la transferencia espacial real.
 
 ### AUC (area bajo la curva ROC)
 
@@ -79,13 +86,15 @@ nuevo, diga: "aqui es muy probable encontrarla" o "aqui no".
   correcto, aunque no acierte el porcentaje exacto.
 - **Rango:** de 0.5 (azar puro) a 1 (perfecto).
 - **Que valor es bueno:** mayor a 0.8 es bueno; mayor a 0.9 es excelente.
-- **Nuestro modelo:** media de **0.884**, bueno (iteracion 3, background regional Chile).
+- **Nuestro modelo:** media **por fold** de **0.77** (aceptable). El AUC "pooled"
+  (juntando todos los folds) sube a 0.89, pero ese pooling mezcla regiones y sobrestima;
+  el 0.77 por fold es el honesto.
 - **Nota importante:** con background planetario (iteraciones anteriores) el AUC
   llegaba a 0.944. Ese numero era artificialmente alto: si la especie vive solo en
   Chile, distinguir su clima del de un desierto antartico o un polo es trivialmente
   facil y el AUC sube sin que eso pruebe mucho. Al acotar el background a Chile,
   el modelo debe discriminar entre sitios climaticamente similares dentro del pais,
-  y el AUC cae a 0.884: un valor mas honesto y mas informativo. Por eso el
+  y el AUC cae a 0.77 (por fold): un valor mas honesto y mas informativo. Por eso el
   background regional es metodologicamente correcto para especies endemicas. Y por
   eso nunca reportamos el AUC solo: lo acompanamos de TSS, de Boyce y de
   validacion espacial.
@@ -105,13 +114,12 @@ nuevo, diga: "aqui es muy probable encontrarla" o "aqui no".
   **negativo es malo**: las presencias aparecen justo donde el modelo decia que
   no deberian estar.
 - **Que valor es bueno:** cuanto mas cerca de 1, mejor.
-- **Nuestro modelo:** media de **0.42**, un valor positivo (iteracion 3, background
-  regional Chile). El Boyce es la metrica mas exigente y la que mas refleja la
-  dificultad real del problema: con presencias y background acotados a Chile, el
-  modelo no puede apoyarse en contraste climatico facil entre regiones del planeta.
-  Un Boyce de 0.42 con background regional equivale en exigencia a un Boyce
-  bastante mas alto con background global. Es la metrica mas honesta para datos
-  solo-presencia y es la que mas peso tiene en la interpretacion.
+- **Nuestro modelo:** media de **0.44**, pero ese promedio **esconde mucha
+  dispersión**: 4 especies tienen Boyce ≥ 0.77 (confiables), 4 están entre 0.36 y 0.59
+  (buenas), y **4 están en 0.2 o por debajo, dos de ellas negativas** (senna −0.66,
+  pleurophora −0.23 → el modelo pone las presencias justo donde dice que no deberían).
+  Es la metrica mas honesta para datos solo-presencia y la que mas peso tiene: aquí es
+  la que delata que el modelo NO sirve para varias especies.
 
 ### Brier score
 
@@ -122,8 +130,13 @@ nuevo, diga: "aqui es muy probable encontrarla" o "aqui no".
   si dice "90% de lluvia", debe llover casi siempre que lo dice. Un Brier bajo es
   un pronosticador en quien se puede confiar al pie de la letra.
 - **Rango:** de 0 a 1. **Menor es mejor**; 0 seria perfecto.
-- **Nuestro modelo:** media de **0.04**, muy bueno. Las probabilidades que entrega
-  son confiables, no solo el orden de los sitios.
+- **Nuestro modelo:** media de **0.04** — pero **cuidado, este número engaña**. El Brier
+  sale bajo porque la especie está ausente en casi todo el territorio: un modelo que
+  predice "idoneidad baja" en todas partes ya acierta la mayoría de las celdas y obtiene
+  Brier bajo sin mérito real. La calibración de verdad (la pendiente de la curva de
+  calibración) es ≈ 0 en casi todas las especies, lo que significa que los números **no**
+  son probabilidades confiables. Trátalos como un **índice de idoneidad relativa**: "este
+  sitio es más apto que aquel", no "hay 80% de probabilidad".
 
 ### MESS (Multivariate Environmental Similarity Surface) - extrapolacion
 
@@ -161,9 +174,9 @@ se desploman en el mundo real.
 
 **Bandera roja, no verde:** por eso, una metrica de **0.99 obtenida con k-fold
 aleatorio** no es una buena noticia, es una **senal de alarma** (probable fuga de
-informacion y sobreajuste). Un 0.707 honesto con validacion espacial y background
-regional vale mucho mas que un 0.99 inflado con background global. Todos los
-numeros de este documento provienen de validacion espacial.
+informacion y sobreajuste). Un AUC 0.77 honesto por fold con validacion espacial y
+background regional vale mucho mas que un 0.99 inflado con background global. Todos los
+numeros de este documento provienen de validacion espacial por fold.
 
 | Forma de evaluar | Que tan parecidos son examen y estudio | Que mide en realidad | Veredicto |
 |---|---|---|---|
@@ -236,11 +249,11 @@ reportamos un conjunto: donde una falla, otra avisa.
 | Validacion espacial | El modelo transfiere a territorio nuevo? | Es el metodo de prueba, no una metrica; da sentido honesto a todas las anteriores |
 
 **Conclusion:** miradas en conjunto, estas metricas dan una vision completa y
-honesta. Nuestro modelo (iteracion 3, background regional Chile) muestra buen
-acierto (TSS 0.707, AUC 0.884), coherencia espacial de las presencias (Boyce
-0.42), probabilidades confiables (Brier 0.04) y un mapa de extrapolacion (MESS)
-que indica donde leer los resultados con cautela. Las metricas son menores que
-en iteraciones con background global, lo cual es esperado y correcto: el
-background regional plantea un problema de discriminacion mas dificil y honesto
-para especies endemicas chilenas. Y todo ello bajo validacion espacial, que es la
-vara de medir mas exigente y realista disponible.
+honesta — y la honesta no es triunfalista. Nuestro modelo (iteracion 3, background
+regional Chile, métricas por fold) **ordena** sitios de forma aceptable (AUC 0.77) pero
+su **transferencia espacial es floja** (TSS 0.26, muy variable entre subregiones), la
+coherencia solo-presencia es **mixta** (Boyce 0.44: confiable en 4–6 especies, malo o
+negativo en 4), y las salidas son **idoneidad relativa, no probabilidades** (el Brier
+0.04 engaña por la baja prevalencia). El MESS marca dónde leer con cautela. La lectura
+útil para decidir es por especie (tabla en `informe_modelo.md`), no por el promedio:
+hay 4 especies confiables, varias solo indicativas y 4 cuyo mapa no debe usarse.
