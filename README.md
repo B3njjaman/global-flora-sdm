@@ -25,29 +25,29 @@ La especificacion metodologica completa esta en [`docs/proyecto_sdm.md`](docs/pr
 
 > Las capas raster (WorldClim/CMIP6) **no se versionan** en el repositorio por tamano; se descargan ejecutando `scripts/02_capas_presente.py`. Ver `.gitignore`.
 
-## Pipeline
+## Pipeline (canónico — Versión 4)
 
-| Etapa | Script | Salida |
+| Etapa | Script / módulo | Salida |
 |---|---|---|
-| 1. Limpieza de ocurrencias | `scripts/01_limpieza.py` | `data/processed/ocurrencias_limpias.gpkg` |
+| 0. Descarga GBIF | `scripts/00_descarga_gbif.py` | ocurrencias crudas (Sudamérica) |
+| 1. Limpieza | `scripts/01_limpieza.py` + `src/limpieza/` | `data/processed/ocurrencias_limpias.gpkg` |
 | 2. Capas presente (WorldClim) | `scripts/02_capas_presente.py` | `data/raw/worldclim_present/` |
-| 3. Terreno (slope/aspect/northness) | `scripts/03_terrain.py` | `data/processed/rasters_aligned/` |
-| 4. Dataset modelable | `scripts/04_extraccion.py` | `data/processed/species_datasets/*.parquet` |
-| 5. Ensemble (5 algoritmos) | `scripts/05_modelado.py` | `data/modeling/ensemble_models/` |
-| 6. Validación y métricas | `scripts/06_validacion.py` | `outputs/tables/` |
-| 7. Idoneidad presente | `scripts/07b_present_suitability.py` | `outputs/maps/*_present_suitability.tif` (recortado a Sudamerica) |
-| 7b. Proyeccion a 2050 *(diferida)* | `scripts/07_forecast_2050.py` | `outputs/maps/_forecast_deferred/` (recortado a Sudamerica) |
-| 8. Mapas y figuras | `scripts/08_mapas.py` | `outputs/figures/`, `outputs/maps/` |
+| 3. Terreno (slope/northness/eastness) | `scripts/03_terrain.py` + `src/terreno/` | rasters de terreno (grilla SA) |
+| 4. Predictoras + background + folds | `src/extraccion/` | background **por área accesible por especie**, folds CV espacial |
+| 5. Ensemble (5 algos, ponderado por TSS) | `scripts/05_entrenar_ensemble.py` | `outputs/tables/metricas_v4_ensemble.csv` |
+| 6. Predicción Sudamérica | `scripts/07_predecir_sudamerica.py` | `outputs/maps/*_idoneidad_sa.tif` |
 
 Las etapas son **secuenciales**: cada una consume las salidas de las anteriores.
 
-> **Estado de la iteracion 3.** Se entregan: ocurrencias limpias (filtradas a Chile),
-> capas alineadas, **13 modelos ensemble calibrados regionalmente** (atriplex excluida por n insuficiente), **validacion completa**
-> (TSS/AUC/Boyce, CV espacial) e **idoneidad del presente** (mapas GeoTIFF recortados a
-> Sudamerica + figuras). El **forecast a 2050** esta implementado y recortado a Sudamerica,
-> pero **se difiere como mejora**: el calculo de MESS aun requiere optimizacion adicional.
-> Las proyecciones futuras parciales quedan en `outputs/maps/_forecast_deferred/`. Ver
-> Roadmap en [`docs/proyecto_sdm.md`](docs/proyecto_sdm.md).
+> **Pipeline legacy (iteración 3, Chile / equal-weight).** Se conserva para auditoría pero
+> **no es el modelo vigente**: `scripts/05_modelado.py`, `06_validacion.py`,
+> `07b_present_suitability.py`, `08_mapas.py`, con métricas en `outputs/tables/metrics_all.csv`.
+
+> **Estado Versión 4.** Se entregan: ocurrencias limpias (Sudamérica), capas alineadas,
+> **16 modelos ensemble** con background por área accesible, **validación** (TSS/AUC/**Boyce**,
+> CV espacial leave-one-cluster-out) e **idoneidad del presente** (16 GeoTIFF recortados a
+> Sudamérica). El **forecast a 2050** queda **diferido** (`outputs/maps/_forecast_deferred/`):
+> falta MESS de proyección e hindcasting. Ver [`docs/v4/flujo_trabajo.md`](docs/v4/flujo_trabajo.md).
 
 ## Instalación
 
