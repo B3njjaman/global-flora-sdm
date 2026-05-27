@@ -1,14 +1,14 @@
 # Flujo de trabajo — Versión 4 (reconstrucción modular)
 
-> **Propósito.** Inventario de **los pasos que ejecuta cada script**, en el orden real del
-> código. Esta es la unidad sobre la que iremos trabajando: **cada paso es algo que podemos
-> mantener, modificar o eliminar** al reconstruir de forma modular. Misma lógica y mismo
-> modelo que la iteración 3.1, con dos cambios de fondo: **alcance Sudamérica** (no solo
-> Chile) y **estructura modular**.
+> **Propósito.** Inventario de los pasos que ejecuta cada script, en el orden real del
+> código. Esta es la unidad sobre la que iremos trabajando: cada paso es algo que podemos
+> mantener, modificar o eliminar al reconstruir de forma modular. Misma lógica y mismo
+> modelo que la iteración 3.1, con dos cambios de fondo: alcance Sudamérica (no solo
+> Chile) y estructura modular.
 >
 > - **Rama:** `version-4`
 > - **Dataset original (única fuente de verdad):** `gbif_distribucion_especies.xlsx`
->   (hoja `Registros GBIF`) — 13.354 registros, 21 especies, 15 columnas.
+>   (hoja `Registros GBIF`): 13.354 registros, 21 especies, 15 columnas.
 >
 > **Leyenda de cada paso:**
 > - (sin marca) = se mantiene igual que en 3.1.
@@ -51,8 +51,8 @@ Pasos en el orden real de `main()`:
 | 7 | `asignar_grupos` | clasifica A/B/C (`config.classify_species`) sobre conteos **post-thinning**; C se marca pero no se descarta. | ⟳ **V4**: recalcular sobre conteos de Sudamérica (cambia el set modelable). |
 | 8 | `_reportar_por_especie` + guardar | tabla inicial→final por especie y escribe el `.gpkg`. | |
 
-**Detalle del paso ★ 3b (filtro Sudamérica).** Dos métodos posibles — verifiqué contra el
-dataset que dan **exactamente los mismos 8.498 registros** (coincidencia 100%, 0
+**Detalle del paso ★ 3b (filtro Sudamérica).** Hay dos métodos posibles. Los verifiqué contra el
+dataset y dan exactamente los mismos 8.498 registros (coincidencia 100%, 0
 discrepancias):
 - **por geometría:** punto dentro del polígono / bbox de Sudamérica (`config.PREDICTION_BBOX`).
 - **por país:** columna `pais` ∈ {Chile, Colombia, Bolivia, Perú, Argentina, Brasil, Ecuador, Paraguay, …}.
