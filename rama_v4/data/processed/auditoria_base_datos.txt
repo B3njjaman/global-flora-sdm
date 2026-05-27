@@ -1,0 +1,53 @@
+================================================================
+AUDITORIA - base_datos_completa
+================================================================
+Filas: 2552 | Columnas: 29 | Especies: 21
+NOTA: la base contiene SOLO presencias; el background/pseudo-ausencias es del script 4 (no hecho).
+
+[1] REGISTROS POR ESPECIE (piso 50 para modelar individual)
+  >=50: 13 especies | <50 (grupo C): 8 especies
+  min 5 (Centaurea chilensis) | max 382 (Encelia canescens)
+
+[2] DUPLICADOS
+  (especie,lat,lon) identicos: 0
+  (lat,lon) repetidos (cualquier especie): 108
+
+[3] VALORES FALTANTES (NaN)
+  temp_media_anual=20, estacionalidad_temp=20, temp_max_mes_calido=20, temp_min_mes_frio=20, rango_anual_temp=20, temp_media_trim_calido=20, temp_media_trim_frio=20, precip_anual=20, estacionalidad_precip=20, precip_trim_seco=20, elevacion=20, pendiente=20
+  filas con algun NaN en predictoras: 20
+
+[4] COORDENADAS
+  lat -45.13..6.25 | lon -81.26..-41.77
+  fuera del bbox Sudamerica: 0 | lat/lon nulos: 0
+
+[5] VALIDEZ DE PREDICTORAS (conteos sospechosos)
+  elevacion <0: 4 | =0: 38 | rango -67..4790 m
+  pendiente fuera [0,90]: 0 | rango 0.00..39.44 deg
+  exposicion_norte fuera [-1,1]: 0
+  exposicion_este  fuera [-1,1]: 0
+  precip_anual <0: 0 | =0: 28
+  topografia toda-0 simultanea: 0
+
+[6] TEMPORAL
+  ano 1890..2026 | sin ano: 248 | <1950: 30
+
+[7] COBERTURA POR PAIS
+  Chile: 2052
+  Argentina: 208
+  Peru: 181
+  Bolivia (Plurinational State of): 83
+  Colombia: 22
+  Brazil: 3
+  Ecuador: 2
+  Paraguay: 1
+
+[8] COLINEALIDAD bioclim (|r|>0.7, las que el script 4 filtraria)
+  temp_min_mes_frio ~ temp_media_trim_frio: r=0.92
+  temp_media_anual ~ temp_media_trim_calido: r=0.91
+  temp_max_mes_calido ~ temp_media_trim_calido: r=0.91
+  temp_media_anual ~ temp_media_trim_frio: r=0.91
+  precip_anual ~ precip_trim_seco: r=0.83
+  temp_media_anual ~ temp_min_mes_frio: r=0.81
+  estacionalidad_temp ~ rango_anual_temp: r=0.80
+  temp_media_anual ~ temp_max_mes_calido: r=0.76
+  total pares |r|>0.7: 8
