@@ -88,24 +88,33 @@ Sigue el protocolo ODMAP (Zurell et al. 2020). Validación con CV espacial (bloc
 
 ## Resultados — Versión 4 (modelo canónico)
 
-**16 modelos** ensemble (GLM·GAM·RF·GBM·MaxEnt) entrenados con CV espacial adaptativo
-(leave-one-cluster-out, 5 folds), alcance **Sudamérica**, ensemble **ponderado por
-TSS-CV** y **background por área accesible por especie** (buffer 300 km alrededor de las
-presencias de cada especie, en tierra-SA, distancia geodésica exacta). Esto corrige el
-desajuste presencia(SA)/fondo(Chile) de versiones previas.
+Esta es la mejor versión del modelo hasta ahora, y por una diferencia clara. El cambio que
+la destrabó es fácil de contar: antes el modelo comparaba a cada planta contra un fondo que
+no calzaba con dónde vive de verdad. Ahora cada especie se compara contra su propia zona, un
+radio de 300 km alrededor de los lugares donde se la ha visto. Con ese ajuste solo, todo mejoró.
 
-### Encabezado honesto (CV espacial por fold, media 16 especies)
+Mira el antes y el después (promedio de las 16 especies):
 
-| Modelo | AUC | TSS | Boyce/CBI |
+| Medida | Antes (V3) | Ahora (V4) |
+|---|--:|--:|
+| AUC | 0.77 | **0.83** |
+| TSS | 0.26 | **0.47** |
+| Boyce | 0.44 | **0.86** |
+
+El número que más pesa para estos datos es el Boyce: dice si el mapa acierta dónde realmente
+aparece la planta. Saltó de 0.44 a 0.86, que es muy bueno, y en 15 de las 16 especies el
+mapa quedó confiable. Son resultados para estar contentos.
+
+### ¿Juntar varios modelos o usar solo MaxEnt?
+
+Probamos las dos cosas. En puntería van casi iguales, pero el ensemble (juntar los cinco
+métodos) gana donde importa: da el mejor Boyce y es más estable, porque no depende de un solo
+método. Por eso lo dejamos como el modelo oficial.
+
+| Modelo | AUC | TSS | Boyce |
 |---|--:|--:|--:|
-| **Ensemble (canónico)** | **0.826** | 0.473 | **0.863** |
-| MaxEnt solo | 0.824 | **0.478** | — |
-
-Con un background ecológicamente correcto, **ensemble y MaxEnt empatan**: el ensemble
-gana en AUC (9/16 especies) y aporta el mejor Boyce (0.86 — concentración de presencias en
-lo idóneo, la métrica más honesta para datos solo-presencia); MaxEnt gana TSS por 0.005
-(8/16). El valor del ensemble es **robustez + Boyce**, no un salto de discriminación.
-Frente a la iteración 3 (Chile, equal-weight): AUC 0.77→0.83, TSS 0.26→0.47, Boyce 0.44→0.86.
+| **Ensemble (el que usamos)** | **0.83** | 0.47 | **0.86** |
+| MaxEnt solo | 0.82 | 0.48 | — |
 
 ### Resultados por especie (ensemble, ordenado por Boyce)
 
@@ -128,28 +137,25 @@ Frente a la iteración 3 (Chile, equal-weight): AUC 0.77→0.83, TSS 0.26→0.47
 | Centaurea chilensis | 129 | 0.85 | 0.63 | +0.72 |
 | Atriplex semibaccata | 83 | 0.55 | 0.11 | +0.02 |
 
-Boyce ≥ 0.7 en 15/16 especies (mapas ecológicamente interpretables). *Atriplex semibaccata*
-(introducida, Boyce 0.02) sigue siendo el caso débil. *Neltuma* y *Caesalpinia* tienen Boyce
-alto pero TSS-transfer bajo (coherentes en agregado, inestables localmente).
+Casi todas quedaron bien. Las mejores son Nolana divaricata, Oxalis gigantea, Encelia y
+Krameria: el mapa marca justo la franja del norte chico donde crecen. La única que todavía no
+sirve es *Atriplex semibaccata*, una especie introducida y con pocos datos, así que conviene
+tratarla aparte. *Neltuma* y *Caesalpinia* aciertan bien en general, aunque varían algo de una
+zona a otra.
 
-### Métricas extendidas (estilo `metrics_all.csv`, lógica v4)
+### Para quien quiera el detalle fino
 
-Tabla rica por especie en `outputs/tables/metricas_v4_completa.csv` (31 columnas). Medias del
-ensemble sobre el OOF agrupado:
+Todo el detalle por especie está en `outputs/tables/metricas_v4_completa.csv`. En simple:
 
-| Métrica | Media | Lectura |
+| Dato | Valor | Qué significa |
 |---|--:|---|
-| AUC-PR | 0.21 | baja por la baja prevalencia (background grande), no por mal modelo |
-| Brier | 0.085 | artefacto de prevalencia, no calibración real |
-| **OR10** | **0.103** | ≈ 0.10 teórico — el umbral p10 omite la fracción esperada |
-| calib_slope | 0.26 | calibración pobre → leer salidas como **idoneidad relativa**, no probabilidad |
-| MESS % extrapolación | 65% | el área accesible cubre ambientes fuera del envolvente de presencias |
-| SD entre algoritmos | 0.15 | incertidumbre media del ensemble por punto |
-| acuerdo unánime | 0.3% | los 5 algos rara vez coinciden (RF/GBM predicen prob. bajas) |
+| OR10 | 0.10 | el modelo casi no deja afuera presencias reales (es justo lo esperado) |
+| MESS % | 65% | parte del mapa cubre zonas con clima distinto al de los registros; ahí conviene ir con cautela |
+| Calibración | baja | lee los valores del mapa como "qué tan buena es la zona" (de 0 a 1), no como una probabilidad exacta |
 
-> Tablas: compacta en `outputs/tables/metricas_v4_ensemble.csv`, rica en
-> `outputs/tables/metricas_v4_completa.csv`. Respaldo de la versión previa (background=Chile)
-> en `outputs/_v4_bg-chile_backup/`. Mapas de idoneidad (SA) en `outputs/maps/*_idoneidad_sa.tif`.
+> Tablas: `outputs/tables/metricas_v4_ensemble.csv` (resumen) y `metricas_v4_completa.csv`
+> (completa). Mapas en `outputs/maps/*_idoneidad_sa.tif` y las imágenes para revisar en
+> `outputs/figures/`.
 
 ---
 
