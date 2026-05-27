@@ -86,6 +86,33 @@ global-flora-sdm/
 
 Sigue el protocolo ODMAP (Zurell et al. 2020). Validación con CV espacial (block CV 500–1000 km), métricas solo-presencia (Boyce/CBI), MESS para extrapolación, e hindcasting para validar el forecast. Detalle completo en [`docs/proyecto_sdm.md`](docs/proyecto_sdm.md).
 
+## Resultados — Versión 4 (modelo canónico)
+
+**16 modelos** ensemble (GLM·GAM·RF·GBM·MaxEnt) entrenados con CV espacial adaptativo
+(leave-one-cluster-out, 5 folds), alcance **Sudamérica**, ensemble **ponderado por
+TSS-CV** y **background por área accesible por especie** (buffer 300 km alrededor de las
+presencias de cada especie, en tierra-SA, distancia geodésica exacta). Esto corrige el
+desajuste presencia(SA)/fondo(Chile) de versiones previas.
+
+### Encabezado honesto (CV espacial por fold, media 16 especies)
+
+| Modelo | AUC | TSS | Boyce/CBI |
+|---|--:|--:|--:|
+| **Ensemble (canónico)** | **0.826** | 0.473 | **0.863** |
+| MaxEnt solo | 0.824 | **0.478** | — |
+
+Con un background ecológicamente correcto, **ensemble y MaxEnt empatan**: el ensemble
+gana en AUC (9/16 especies) y aporta el mejor Boyce (0.86 — concentración de presencias en
+lo idóneo, la métrica más honesta para datos solo-presencia); MaxEnt gana TSS por 0.005
+(8/16). El valor del ensemble es **robustez + Boyce**, no un salto de discriminación.
+Frente a la iteración 3 (Chile, equal-weight): AUC 0.77→0.83, TSS 0.26→0.47, Boyce 0.44→0.86.
+
+> Métricas completas en `outputs/tables/metricas_v4_ensemble.csv`. Respaldo de la versión
+> previa (background=Chile) en `outputs/_v4_bg-chile_backup/`. Mapas de idoneidad (SA) en
+> `outputs/maps/*_idoneidad_sa.tif`.
+
+---
+
 ## Resultados (iteracion 3 — calibracion regional Chile)
 
 **13 modelos** ensemble entrenados y validados con CV espacial adaptativo, calibrados
