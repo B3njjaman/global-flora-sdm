@@ -1,11 +1,11 @@
 # Informe: cómo funciona el modelo (iteración 3)
 
-Modelo de distribución de especies (SDM) **ensemble**, **escala regional (Chile)**,
-para 14 especies de flora. Predice **idoneidad de hábitat** (0–1) en cada celda de
+Modelo de distribución de especies (SDM) tipo ensemble, a escala regional (Chile),
+para 14 especies de flora. Predice la **idoneidad de hábitat** (0–1) en cada celda de
 ~5 km a partir de clima y topografía. Esta iteración reencuadra la calibración al
 territorio de Chile: las 14 especies son endémicas chilenas (más dos introducidas con
 presencia en Chile) y calibrar contra background planetario inflaba la discriminación
-de forma trivial (AUC ~0.99). Al acotar a Chile el modelo resuelve un problema
+casi sin esfuerzo (AUC ~0.99). Al acotar a Chile el modelo resuelve un problema
 ecológico real: caracterizar el nicho dentro del rango del país.
 
 ---
@@ -31,13 +31,13 @@ fuera del país y reduce el n disponible frente a la iteración anterior.
 **Background (pseudo-ausencias):** ~18.750 puntos (de 20.000 solicitados; el resto
 cae con NaN en algún predictor) muestreados **dentro de Chile**, no en todo el planeta.
 El fondo representa las condiciones ambientales disponibles en el territorio de
-calibración. *Matiz pendiente:* el "target-group" no corrige sesgo de muestreo como
-debería — el suavizado de Laplace en `04_extraccion.py` aplastó la señal de esfuerzo
+calibración. *Matiz pendiente:* el "target-group" no corrige el sesgo de muestreo como
+debería, porque el suavizado de Laplace en `04_extraccion.py` aplastó la señal de esfuerzo
 GBIF, así que el background es prácticamente aleatorio dentro de Chile. Además, las
 presencias ocupan una franja estrecha (lat ≈ −25 a −35) mientras el background abarca
 todo el país (hasta Patagonia): distinguir "norte árido" de "sur templado" sigue siendo
-relativamente fácil, lo que aún infla algo la discriminación. El área accesible honesta
-sería un *buffer* alrededor de las presencias, no Chile entero.
+relativamente fácil, lo que aún infla algo la discriminación. El área accesible más
+defendible sería un *buffer* alrededor de las presencias, y no Chile entero.
 
 **Ensemble de 5 algoritmos** (cada uno con hiperparámetros tuneados vía CV):
 GLM (regresión logística L1), GAM (pyGAM), Random Forest, LightGBM, MaxEnt (elapid).
@@ -56,15 +56,15 @@ enfocan en esa región (extent configurado en `config.py`).
 Validación por **leave-one-spatial-cluster-out**: las presencias se agrupan en 5
 clústeres espaciales (k-means sobre lon/lat); cada clúster es un fold; se entrena
 en 4 y se evalúa en el que queda fuera. El tamaño de fold **se adapta al rango de
-la especie**, de modo que cada fold contiene presencias — esto rescató a las 12
+la especie**, de modo que cada fold contiene presencias. Así se rescató a las 12
 endémicas que antes caían en 1–2 bloques y daban métricas no calculables (NaN).
 
 Métricas: TSS y AUC (discriminación), Boyce/CBI (solo-presencia), Brier
 (calibración), SD entre folds (robustez), MESS (extrapolación).
 
-**Cómo se reporta el TSS (corregido en esta revisión).** El número honesto de
+**Cómo se reporta el TSS (corregido en esta revisión).** La cifra que mejor refleja la
 transferencia espacial es el **TSS/AUC por fold (media ± SD)**. El TSS pooled se
-reporta al **umbral fijado en entrenamiento** aplicado al OOF. Antes se optimizaba el
+reporta al umbral fijado en entrenamiento aplicado al OOF. Antes se optimizaba el
 umbral sobre el propio OOF (mirando las etiquetas de evaluación), lo que sobrestimaba
 el TSS de forma sistemática (p. ej. nolana_divaricata aparecía con TSS 0.80 cuando su
 TSS-transfer real es 0.12). Eso quedó eliminado: `06_validacion.py` ya no re-optimiza
@@ -73,7 +73,7 @@ el umbral sobre el conjunto de evaluación.
 ## 4. Resultados (CV espacial por fold, ensemble, calibrado a Chile)
 
 13 especies (atriplex excluida, n=8). AUC y TSS son **media ± SD entre folds**
-(transferencia espacial honesta); Boyce es el CBI sobre OOF. Ordenadas por Boyce:
+(transferencia espacial sin maquillar); Boyce es el CBI sobre OOF. Ordenadas por Boyce:
 
 | Especie | n | AUC fold ±SD | TSS fold ±SD | Boyce | Lectura |
 |---|--:|--:|--:|--:|---|
@@ -96,7 +96,7 @@ el umbral sobre el conjunto de evaluación.
 La SD entre folds es alta (a menudo > el propio TSS): el modelo funciona en unas
 subregiones de Chile y no en otras. El pooled-OOF con umbral de entrenamiento da una
 cifra más alta (AUC 0.89 · TSS 0.50) pero el pooling mezcla regiones y sobrestima la
-transferencia; por eso el encabezado honesto es la cifra por fold.
+transferencia; por eso la cifra que encabeza el reporte es la de por fold.
 
 ## 5. Por qué las métricas bajaron (y por qué eso es correcto)
 
@@ -106,11 +106,11 @@ Atacama, distinguir sus presencias de puntos en la selva amazónica o la tundra
 esfuerzo. Ese número no decía nada sobre si el modelo captura el nicho real.
 
 Al acotar background y presencias a Chile, el modelo debe discriminar entre zonas
-de Chile con nicho apto y zonas de Chile sin él — una tarea ecológicamente relevante
-y mucho más difícil. Las métricas que bajan son, por tanto, **métricas honestas**.
+de Chile con nicho apto y zonas de Chile sin él, una tarea ecológicamente relevante
+y mucho más difícil. Las métricas que bajan son, por tanto, métricas más realistas.
 
 El Boyce (CBI) bajó de 0.68 a 0.42 en promedio. Eso también es información: contra
-background planetario, concentrar presencias en zonas de alta idoneidad era trivial;
+background planetario, concentrar presencias en zonas de alta idoneidad no costaba nada;
 dentro de Chile se revela qué especies transfieren realmente su nicho.
 
 ## 6. Lectura honesta de los resultados
@@ -163,13 +163,13 @@ en unas subregiones que en otras. Interpretar el TSS medio con esa varianza en m
 | Boyce medio | 0.68 | 0.44 | métrica solo-presencia, la más exigente |
 
 La caída de iter 2 a iter 3 tiene dos causas: (a) acotar el background a Chile elimina
-el contraste trivial "Chile vs. planeta"; (b) reportar por fold y sin trucar el umbral
-expone la transferencia espacial real. Ambas son honestidad, no regresión.
+el fácil contraste "Chile vs. planeta"; (b) reportar por fold y sin trucar el umbral
+expone la transferencia espacial real. Ambas reflejan rigor, no una regresión.
 
 ## 9. Limitaciones y siguientes pasos
 
 - **Forecast 2050 (CMIP6)**: los rasters **están calculados** (en
-  `outputs/maps/_forecast_deferred/`) pero **no certificados** — falta el MESS de
+  `outputs/maps/_forecast_deferred/`) pero **no certificados**: falta el MESS de
   proyección Chile→Sudamérica y la validación por hindcasting. No presentar
   proyecciones de cambio climático hasta cerrar eso.
 - **Probabilidades mal calibradas:** `calib_slope` ≈ 0 en casi todas las especies. Las
@@ -184,7 +184,7 @@ expone la transferencia espacial real. Ambas son honestidad, no regresión.
 - **Umbral maxTSS-sobre-OOF y CV adaptativo**: pendientes de refinamiento; no
   modificados en esta iteración.
 - **Especies introducidas con n insuficiente** (atriplex n=8, schinus n=72 al
-  acotar a Chile): requieren un marco aparte — más registros nacionales, enfoque
-  de invasibilidad, o exclusión del análisis comparativo.
+  acotar a Chile): requieren un marco aparte, ya sea con más registros nacionales,
+  un enfoque de invasibilidad, o su exclusión del análisis comparativo.
 - El sampler de background podría mejorarse con un target-group correcto (mismo
   sesgo de muestreo que las presencias).
