@@ -7,47 +7,47 @@
 > La iteración 3 (Chile, equal-weight, `metrics_all.csv`) queda como referencia histórica
 > más abajo. Ver sección [Resultados — Versión 4](#resultados--versión-4-modelo-canónico).
 
-Pipeline reproducible en stack Python para modelar la distribución potencial de 14 especies de flora endemica chilena con registros en GBIF, combinando multiples algoritmos (GLM, GAM, RF, GBM, MaxEnt) y proyectando bajo escenarios de cambio climatico. La calibracion se acota a **Chile continental**; la prediccion y los mapas se recortan a **Sudamerica**.
+Pipeline reproducible en stack Python para modelar la distribución potencial de flora endemica chilena con registros en GBIF, combinando multiples algoritmos (GLM, GAM, RF, GBM, MaxEnt) en un ensemble **ponderado por TSS**. El alcance es **Sudamérica**; el background de calibración se muestrea por especie dentro de su **área accesible** (buffer 300 km alrededor de sus presencias), y la predicción/los mapas se recortan a Sudamérica.
 
 ---
 
 ## Objetivo
 
-Modelar la distribucion potencial de 14 especies de flora, principalmente endemicas de Chile, a **escala regional** (resolucion 2.5 arc-min, ~5 km), mediante un **ensemble** de cinco algoritmos, y **proyectar a 2050** bajo multiples GCMs y SSPs de CMIP6. La calibracion se realiza dentro de Chile porque las especies son endemicas chilenas: calibrar contra un background planetario infla artificialmente la discriminacion (el modelo aprende "Atacama vs. planeta", no "nicho dentro de Chile"). El diseno es incremental: la iteracion 1 uso variables bioclimaticas + topografia; la iteracion 2 depuro el CV espacial y el background; la iteracion 3 acota el marco geografico a Chile/Sudamerica.
+Modelar la distribucion potencial de 16 especies de flora, principalmente endemicas de Chile, a **escala regional** (resolucion 2.5 arc-min, ~5 km), mediante un **ensemble** de cinco algoritmos ponderado por TSS. El background se muestrea por especie dentro de su **área accesible (M)**: un buffer de 300 km alrededor de sus presencias ∩ tierra-Sudamérica. Esto evita dos errores opuestos: un fondo demasiado amplio (planetario/continental) que infla la discriminación de endémicas, y un fondo fijo (solo Chile) que no representa las presencias que se extienden a Argentina/Perú/Bolivia. El diseno es incremental: iter. 1 bioclim+topografia; iter. 2 CV espacial y background; iter. 3 marco Chile/Sudamerica; **Versión 4: alcance Sudamérica + background por área accesible por especie**.
 
 La especificacion metodologica completa esta en [`docs/proyecto_sdm.md`](docs/proyecto_sdm.md).
 
 ## Datos
 
-- **Ocurrencias:** GBIF — registros de 14 especies (`data/raw/gbif_distribucion_especies.xlsx`), filtrados a Chile continental para background y calibracion.
-- **Predictoras (presente):** WorldClim v2.1 bioclim (10 capas) + elevacion + topografia derivada; recortadas al bbox de Chile para entrenamiento.
+- **Ocurrencias:** GBIF — registros de 21 especies (16 modelables) filtrados a **Sudamérica**; base de modelado en `rama_v4/data/processed/base_datos_completa.csv`.
+- **Predictoras (presente):** WorldClim v2.1 bioclim (10 capas) + elevacion + topografia derivada (slope/northness/eastness, grilla SA). El background de cada especie se extrae dentro de su área accesible.
 - **Predictoras (futuro):** WorldClim Future / CMIP6 — >=4 GCMs x >=2 SSPs, periodo 2041-2060; predicciones recortadas al bbox de Sudamerica.
 
 > Las capas raster (WorldClim/CMIP6) **no se versionan** en el repositorio por tamano; se descargan ejecutando `scripts/02_capas_presente.py`. Ver `.gitignore`.
 
-## Pipeline
+## Pipeline (canónico — Versión 4)
 
-| Etapa | Script | Salida |
+| Etapa | Script / módulo | Salida |
 |---|---|---|
-| 1. Limpieza de ocurrencias | `scripts/01_limpieza.py` | `data/processed/ocurrencias_limpias.gpkg` |
+| 0. Descarga GBIF | `scripts/00_descarga_gbif.py` | ocurrencias crudas (Sudamérica) |
+| 1. Limpieza | `scripts/01_limpieza.py` + `src/limpieza/` | `data/processed/ocurrencias_limpias.gpkg` |
 | 2. Capas presente (WorldClim) | `scripts/02_capas_presente.py` | `data/raw/worldclim_present/` |
-| 3. Terreno (slope/aspect/northness) | `scripts/03_terrain.py` | `data/processed/rasters_aligned/` |
-| 4. Dataset modelable | `scripts/04_extraccion.py` | `data/processed/species_datasets/*.parquet` |
-| 5. Ensemble (5 algoritmos) | `scripts/05_modelado.py` | `data/modeling/ensemble_models/` |
-| 6. Validación y métricas | `scripts/06_validacion.py` | `outputs/tables/` |
-| 7. Idoneidad presente | `scripts/07b_present_suitability.py` | `outputs/maps/*_present_suitability.tif` (recortado a Sudamerica) |
-| 7b. Proyeccion a 2050 *(diferida)* | `scripts/07_forecast_2050.py` | `outputs/maps/_forecast_deferred/` (recortado a Sudamerica) |
-| 8. Mapas y figuras | `scripts/08_mapas.py` | `outputs/figures/`, `outputs/maps/` |
+| 3. Terreno (slope/northness/eastness) | `scripts/03_terrain.py` + `src/terreno/` | rasters de terreno (grilla SA) |
+| 4. Predictoras + background + folds | `src/extraccion/` | background **por área accesible por especie**, folds CV espacial |
+| 5. Ensemble (5 algos, ponderado por TSS) | `scripts/05_entrenar_ensemble.py` | `outputs/tables/metricas_v4_ensemble.csv` |
+| 6. Predicción Sudamérica | `scripts/07_predecir_sudamerica.py` | `outputs/maps/*_idoneidad_sa.tif` |
 
 Las etapas son **secuenciales**: cada una consume las salidas de las anteriores.
 
-> **Estado de la iteracion 3.** Se entregan: ocurrencias limpias (filtradas a Chile),
-> capas alineadas, **13 modelos ensemble calibrados regionalmente** (atriplex excluida por n insuficiente), **validacion completa**
-> (TSS/AUC/Boyce, CV espacial) e **idoneidad del presente** (mapas GeoTIFF recortados a
-> Sudamerica + figuras). El **forecast a 2050** esta implementado y recortado a Sudamerica,
-> pero **se difiere como mejora**: el calculo de MESS aun requiere optimizacion adicional.
-> Las proyecciones futuras parciales quedan en `outputs/maps/_forecast_deferred/`. Ver
-> Roadmap en [`docs/proyecto_sdm.md`](docs/proyecto_sdm.md).
+> **Pipeline legacy (iteración 3, Chile / equal-weight).** Se conserva para auditoría pero
+> **no es el modelo vigente**: `scripts/05_modelado.py`, `06_validacion.py`,
+> `07b_present_suitability.py`, `08_mapas.py`, con métricas en `outputs/tables/metrics_all.csv`.
+
+> **Estado Versión 4.** Se entregan: ocurrencias limpias (Sudamérica), capas alineadas,
+> **16 modelos ensemble** con background por área accesible, **validación** (TSS/AUC/**Boyce**,
+> CV espacial leave-one-cluster-out) e **idoneidad del presente** (16 GeoTIFF recortados a
+> Sudamérica). El **forecast a 2050** queda **diferido** (`outputs/maps/_forecast_deferred/`):
+> falta MESS de proyección e hindcasting. Ver [`docs/v4/flujo_trabajo.md`](docs/v4/flujo_trabajo.md).
 
 ## Instalación
 
