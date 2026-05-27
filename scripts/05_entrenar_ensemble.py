@@ -175,7 +175,7 @@ def procesar_especie(sp, pres, bgdf):
                 por_fold[a].append(roc_auc_score(yte, pte))
                 thr = _umbral_maxtss(ytr, ptr)
                 tss_fold[a].append(_tss(yte, pte, thr))
-                guardado[a] = (yte, pte)
+                guardado[a] = (yte, pte, ytr, ptr)
             except Exception:
                 pass
         if guardado:
@@ -189,16 +189,18 @@ def procesar_especie(sp, pres, bgdf):
     oof_pe, oof_y = [], []
     for g in preds_guardadas:
         ys = next(iter(g.values()))[0]
-        num = np.zeros(len(ys)); den = 0.0
-        for a, (yt, pt) in g.items():
-            num += pesos[a] * pt; den += pesos[a]
+        ytr_f = next(iter(g.values()))[2]
+        num_te = np.zeros(len(ys)); num_tr = np.zeros(len(ytr_f)); den = 0.0
+        for a, (yte_, pte_, ytr_, ptr_) in g.items():
+            num_te += pesos[a] * pte_; num_tr += pesos[a] * ptr_; den += pesos[a]
         if den == 0:
             continue
-        pe = num / den
+        pe, pe_tr = num_te / den, num_tr / den
         oof_pe.append(pe); oof_y.append(ys)
         if len(np.unique(ys)) == 2:
             ens_auc.append(roc_auc_score(ys, pe))
-            ens_tss.append(_tss(ys, pe, _umbral_maxtss(ys, pe)))
+            # umbral HONESTO: del ensemble en TRAIN, aplicado al test (no se truca con el test)
+            ens_tss.append(_tss(ys, pe, _umbral_maxtss(ytr_f, pe_tr)))
     boyce = np.nan
     if oof_pe:
         op, oy = np.concatenate(oof_pe), np.concatenate(oof_y)
