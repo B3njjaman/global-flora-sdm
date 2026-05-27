@@ -132,9 +132,24 @@ Boyce ≥ 0.7 en 15/16 especies (mapas ecológicamente interpretables). *Atriple
 (introducida, Boyce 0.02) sigue siendo el caso débil. *Neltuma* y *Caesalpinia* tienen Boyce
 alto pero TSS-transfer bajo (coherentes en agregado, inestables localmente).
 
-> Métricas completas en `outputs/tables/metricas_v4_ensemble.csv`. Respaldo de la versión
-> previa (background=Chile) en `outputs/_v4_bg-chile_backup/`. Mapas de idoneidad (SA) en
-> `outputs/maps/*_idoneidad_sa.tif`.
+### Métricas extendidas (estilo `metrics_all.csv`, lógica v4)
+
+Tabla rica por especie en `outputs/tables/metricas_v4_completa.csv` (31 columnas). Medias del
+ensemble sobre el OOF agrupado:
+
+| Métrica | Media | Lectura |
+|---|--:|---|
+| AUC-PR | 0.21 | baja por la baja prevalencia (background grande), no por mal modelo |
+| Brier | 0.085 | artefacto de prevalencia, no calibración real |
+| **OR10** | **0.103** | ≈ 0.10 teórico — el umbral p10 omite la fracción esperada |
+| calib_slope | 0.26 | calibración pobre → leer salidas como **idoneidad relativa**, no probabilidad |
+| MESS % extrapolación | 65% | el área accesible cubre ambientes fuera del envolvente de presencias |
+| SD entre algoritmos | 0.15 | incertidumbre media del ensemble por punto |
+| acuerdo unánime | 0.3% | los 5 algos rara vez coinciden (RF/GBM predicen prob. bajas) |
+
+> Tablas: compacta en `outputs/tables/metricas_v4_ensemble.csv`, rica en
+> `outputs/tables/metricas_v4_completa.csv`. Respaldo de la versión previa (background=Chile)
+> en `outputs/_v4_bg-chile_backup/`. Mapas de idoneidad (SA) en `outputs/maps/*_idoneidad_sa.tif`.
 
 ---
 
