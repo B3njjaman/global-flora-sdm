@@ -214,4 +214,9 @@ y curva de calibración. **Vista centrada en Sudamérica** (no global).
 ## Decisiones de auditoría abiertas
 
 - 🔴 **A — método del filtro Sudamérica (paso [01].3b):** geometría (recomendado) vs país.
-- 🔴 **B — área de calibración (pasos [04].m3/2/3):** toda Sudamérica (recomendado) vs Chile.
+- ✅ **B — área de calibración / background → RESUELTA.** El background NO es ni Chile fijo
+  ni todo Sudamérica, sino el **área accesible (M) por especie**: buffer de 300 km alrededor
+  de las presencias de cada especie ∩ tierra-SA (distancia geodésica exacta, BallTree-haversine,
+  `src/extraccion/background.py::muestrear_background_especie`). Evita el desajuste
+  presencia(SA)/fondo(Chile) sin caer en la inflación trivial de un fondo continental para
+  endémicas estrictas. Implementado en `05_entrenar_ensemble.py` y `07_predecir_sudamerica.py`.

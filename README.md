@@ -1,6 +1,11 @@
 # global-flora-sdm
 
-**Modelos de distribución de especies (SDM) para flora endemica de Chile — alcance regional, enfoque ensemble, con proyeccion a 2050 (CMIP6). (Iteracion 3)**
+**Modelos de distribución de especies (SDM) para flora endemica de Chile — alcance regional, enfoque ensemble, con proyeccion a 2050 (CMIP6). (Versión 4 — modelo canónico vigente)**
+
+> **Modelo vigente: Versión 4** (alcance Sudamérica, **background por área accesible
+> por especie**). Métricas canónicas en `outputs/tables/metricas_v4_ensemble.csv`.
+> La iteración 3 (Chile, equal-weight, `metrics_all.csv`) queda como referencia histórica
+> más abajo. Ver sección [Resultados — Versión 4](#resultados--versión-4-modelo-canónico).
 
 Pipeline reproducible en stack Python para modelar la distribución potencial de 14 especies de flora endemica chilena con registros en GBIF, combinando multiples algoritmos (GLM, GAM, RF, GBM, MaxEnt) y proyectando bajo escenarios de cambio climatico. La calibracion se acota a **Chile continental**; la prediccion y los mapas se recortan a **Sudamerica**.
 
@@ -80,6 +85,58 @@ global-flora-sdm/
 ## Metodología y validación
 
 Sigue el protocolo ODMAP (Zurell et al. 2020). Validación con CV espacial (block CV 500–1000 km), métricas solo-presencia (Boyce/CBI), MESS para extrapolación, e hindcasting para validar el forecast. Detalle completo en [`docs/proyecto_sdm.md`](docs/proyecto_sdm.md).
+
+## Resultados — Versión 4 (modelo canónico)
+
+**16 modelos** ensemble (GLM·GAM·RF·GBM·MaxEnt) entrenados con CV espacial adaptativo
+(leave-one-cluster-out, 5 folds), alcance **Sudamérica**, ensemble **ponderado por
+TSS-CV** y **background por área accesible por especie** (buffer 300 km alrededor de las
+presencias de cada especie, en tierra-SA, distancia geodésica exacta). Esto corrige el
+desajuste presencia(SA)/fondo(Chile) de versiones previas.
+
+### Encabezado honesto (CV espacial por fold, media 16 especies)
+
+| Modelo | AUC | TSS | Boyce/CBI |
+|---|--:|--:|--:|
+| **Ensemble (canónico)** | **0.826** | 0.473 | **0.863** |
+| MaxEnt solo | 0.824 | **0.478** | — |
+
+Con un background ecológicamente correcto, **ensemble y MaxEnt empatan**: el ensemble
+gana en AUC (9/16 especies) y aporta el mejor Boyce (0.86 — concentración de presencias en
+lo idóneo, la métrica más honesta para datos solo-presencia); MaxEnt gana TSS por 0.005
+(8/16). El valor del ensemble es **robustez + Boyce**, no un salto de discriminación.
+Frente a la iteración 3 (Chile, equal-weight): AUC 0.77→0.83, TSS 0.26→0.47, Boyce 0.44→0.86.
+
+### Resultados por especie (ensemble, ordenado por Boyce)
+
+| Especie | n | AUC | TSS | Boyce |
+|---|--:|--:|--:|--:|
+| Krameria cistoidea | 254 | 0.89 | 0.54 | +1.00 |
+| Encelia canescens | 387 | 0.93 | 0.62 | +0.99 |
+| Schinus areira | 323 | 0.75 | 0.22 | +0.99 |
+| Oxalis gigantea | 123 | 0.95 | 0.69 | +0.99 |
+| Nolana divaricata | 116 | 0.97 | 0.80 | +0.99 |
+| Senna cumingii | 138 | 0.91 | 0.60 | +0.98 |
+| Eulychnia acida | 199 | 0.89 | 0.53 | +0.98 |
+| Cumulopuntia sphaerica | 175 | 0.89 | 0.57 | +0.96 |
+| Neltuma chilensis | 304 | 0.69 | 0.19 | +0.92 |
+| Skytanthus acutus | 162 | 0.86 | 0.58 | +0.92 |
+| Pleurophora pungens | 69 | 0.74 | 0.31 | +0.91 |
+| Nolana sedifolia | 122 | 0.78 | 0.56 | +0.90 |
+| Caesalpinia angulata | 114 | 0.69 | 0.17 | +0.79 |
+| Miqueliopuntia miquelii | 153 | 0.87 | 0.45 | +0.77 |
+| Centaurea chilensis | 129 | 0.85 | 0.63 | +0.72 |
+| Atriplex semibaccata | 83 | 0.55 | 0.11 | +0.02 |
+
+Boyce ≥ 0.7 en 15/16 especies (mapas ecológicamente interpretables). *Atriplex semibaccata*
+(introducida, Boyce 0.02) sigue siendo el caso débil. *Neltuma* y *Caesalpinia* tienen Boyce
+alto pero TSS-transfer bajo (coherentes en agregado, inestables localmente).
+
+> Métricas completas en `outputs/tables/metricas_v4_ensemble.csv`. Respaldo de la versión
+> previa (background=Chile) en `outputs/_v4_bg-chile_backup/`. Mapas de idoneidad (SA) en
+> `outputs/maps/*_idoneidad_sa.tif`.
+
+---
 
 ## Resultados (iteracion 3 — calibracion regional Chile)
 
