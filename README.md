@@ -107,6 +107,31 @@ lo idóneo, la métrica más honesta para datos solo-presencia); MaxEnt gana TSS
 (8/16). El valor del ensemble es **robustez + Boyce**, no un salto de discriminación.
 Frente a la iteración 3 (Chile, equal-weight): AUC 0.77→0.83, TSS 0.26→0.47, Boyce 0.44→0.86.
 
+### Resultados por especie (ensemble, ordenado por Boyce)
+
+| Especie | n | AUC | TSS | Boyce |
+|---|--:|--:|--:|--:|
+| Krameria cistoidea | 254 | 0.89 | 0.54 | +1.00 |
+| Encelia canescens | 387 | 0.93 | 0.62 | +0.99 |
+| Schinus areira | 323 | 0.75 | 0.22 | +0.99 |
+| Oxalis gigantea | 123 | 0.95 | 0.69 | +0.99 |
+| Nolana divaricata | 116 | 0.97 | 0.80 | +0.99 |
+| Senna cumingii | 138 | 0.91 | 0.60 | +0.98 |
+| Eulychnia acida | 199 | 0.89 | 0.53 | +0.98 |
+| Cumulopuntia sphaerica | 175 | 0.89 | 0.57 | +0.96 |
+| Neltuma chilensis | 304 | 0.69 | 0.19 | +0.92 |
+| Skytanthus acutus | 162 | 0.86 | 0.58 | +0.92 |
+| Pleurophora pungens | 69 | 0.74 | 0.31 | +0.91 |
+| Nolana sedifolia | 122 | 0.78 | 0.56 | +0.90 |
+| Caesalpinia angulata | 114 | 0.69 | 0.17 | +0.79 |
+| Miqueliopuntia miquelii | 153 | 0.87 | 0.45 | +0.77 |
+| Centaurea chilensis | 129 | 0.85 | 0.63 | +0.72 |
+| Atriplex semibaccata | 83 | 0.55 | 0.11 | +0.02 |
+
+Boyce ≥ 0.7 en 15/16 especies (mapas ecológicamente interpretables). *Atriplex semibaccata*
+(introducida, Boyce 0.02) sigue siendo el caso débil. *Neltuma* y *Caesalpinia* tienen Boyce
+alto pero TSS-transfer bajo (coherentes en agregado, inestables localmente).
+
 > Métricas completas en `outputs/tables/metricas_v4_ensemble.csv`. Respaldo de la versión
 > previa (background=Chile) en `outputs/_v4_bg-chile_backup/`. Mapas de idoneidad (SA) en
 > `outputs/maps/*_idoneidad_sa.tif`.
