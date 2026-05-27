@@ -1,6 +1,11 @@
 # global-flora-sdm
 
-**Modelos de distribución de especies (SDM) para flora endemica de Chile — alcance regional, enfoque ensemble, con proyeccion a 2050 (CMIP6). (Iteracion 3)**
+**Modelos de distribución de especies (SDM) para flora endemica de Chile — alcance regional, enfoque ensemble, con proyeccion a 2050 (CMIP6). (Versión 4 — modelo canónico vigente)**
+
+> **Modelo vigente: Versión 4** (alcance Sudamérica, **background por área accesible
+> por especie**). Métricas canónicas en `outputs/tables/metricas_v4_ensemble.csv`.
+> La iteración 3 (Chile, equal-weight, `metrics_all.csv`) queda como referencia histórica
+> más abajo. Ver sección [Resultados — Versión 4](#resultados--versión-4-modelo-canónico).
 
 Pipeline reproducible en stack Python para modelar la distribución potencial de 14 especies de flora endemica chilena con registros en GBIF, combinando multiples algoritmos (GLM, GAM, RF, GBM, MaxEnt) y proyectando bajo escenarios de cambio climatico. La calibracion se acota a **Chile continental**; la prediccion y los mapas se recortan a **Sudamerica**.
 
