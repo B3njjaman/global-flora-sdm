@@ -11,7 +11,9 @@ Para cada especie viable (>= MIN_RECORDS_TO_MODEL):
   5. CV espacial leave-one-cluster-out → AUC y TSS (umbral maxTSS fijado en TRAIN).
   6. Ensemble = combinación PONDERADA por TSS-CV de cada algoritmo.
 
-Salida: outputs/tables/metricas_v4_ensemble.csv + resumen comparable con main.
+Salida: outputs/tables/metricas_v4_ensemble.csv (compacta) +
+        outputs/tables/metricas_v4_completa.csv (rica: AUC-PR, F1, Brier, calibración,
+        OR10, MESS%, SD entre algoritmos, acuerdo binario — estilo metrics_all.csv).
 Uso: python scripts/05_entrenar_ensemble.py
 """
 from __future__ import annotations
@@ -36,13 +38,22 @@ from joblib import Parallel, delayed  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.ensemble import RandomForestClassifier  # noqa: E402
-from sklearn.metrics import roc_auc_score, roc_curve  # noqa: E402
+from sklearn.metrics import (  # noqa: E402
+    roc_auc_score, roc_curve, average_precision_score, brier_score_loss, f1_score,
+)
 
 BIO = ["bio1", "bio4", "bio5", "bio6", "bio7", "bio10", "bio11", "bio12", "bio15", "bio17"]
 PRED = [nombres.NOMBRES_ES[c] for c in BIO] + ["elevacion", "pendiente", "exposicion_norte", "exposicion_este"]
 ESCALADOS = {"glm", "gam"}
 BASE = _ROOT / "rama_v4" / "data" / "processed" / "base_datos_completa.csv"
 SALIDA = _ROOT / "outputs" / "tables" / "metricas_v4_ensemble.csv"
+SALIDA_COMPLETA = _ROOT / "outputs" / "tables" / "metricas_v4_completa.csv"
+# Columnas de la tabla compacta (compatibilidad con 07_predecir y encabezado del README).
+COLS_COMPACTAS = (
+    ["especie", "n_pres", "n_pred", "n_folds"]
+    + [f"{m}_{a}" for a in ["glm", "gam", "rf", "gbm", "maxent"] for m in ("auc", "tss")]
+    + ["auc_ensemble", "tss_ensemble", "boyce_ensemble"]
+)
 
 
 def extraer_predictoras(df: pd.DataFrame) -> pd.DataFrame:
@@ -148,6 +159,65 @@ def _entrenar_fold(Xtr, ytr, Xte):
     return res
 
 
+def _metricas_ricas(preds_guardadas, op, oy, pres_env, full_env, preds_list):
+    """Métricas ricas del ensemble sobre el OOF agrupado (estilo metrics_all.csv).
+
+    Discriminación extra (AUC-PR, F1), calibración (Brier, slope/intercept),
+    solo-presencia (OR10 al p10), extrapolación (MESS %), e incertidumbre del
+    ensemble (SD entre algoritmos, acuerdo binario). Sobre predicciones
+    out-of-fold; solo el umbral-resumen de F1 mira las etiquetas (es un resumen).
+    """
+    from sklearn.calibration import calibration_curve
+    from sklearn.linear_model import LinearRegression
+
+    r: dict[str, float] = {}
+    if len(op) and len(np.unique(oy)) == 2:
+        opc = np.clip(op, 0.0, 1.0)
+        r["ens_auc_pr"] = float(average_precision_score(oy, op))
+        r["ens_brier"] = float(brier_score_loss(oy, opc))
+        thr = _umbral_maxtss(oy, op)
+        r["ens_f1"] = float(f1_score(oy, (op >= thr).astype(int), zero_division=0))
+        pres_p = op[oy == 1]
+        if len(pres_p):
+            p10 = float(np.percentile(pres_p, 10))
+            r["ens_p10"] = p10
+            r["ens_or10"] = float(np.mean(pres_p < p10))
+        try:
+            pt, pp = calibration_curve(oy, opc, n_bins=10, strategy="uniform")
+            if len(pp) >= 2:
+                lr = LinearRegression().fit(pp.reshape(-1, 1), pt)
+                r["ens_calib_slope"] = float(lr.coef_[0])
+                r["ens_calib_intercept"] = float(lr.intercept_)
+        except Exception:
+            pass
+    # MESS: % de puntos fuera del rango ambiental de las presencias (extrapolación)
+    try:
+        ref = pres_env[preds_list].to_numpy(dtype="float64")
+        q = full_env[preds_list].to_numpy(dtype="float64")
+        lo, hi = np.nanmin(ref, axis=0), np.nanmax(ref, axis=0)
+        outside = ((q < lo) | (q > hi)).any(axis=1)
+        r["mess_pct_extrapolation"] = float(100.0 * np.mean(outside))
+    except Exception:
+        pass
+    # Incertidumbre del ensemble: SD entre algoritmos + acuerdo binario (por fold, promediado)
+    sds, agree_mean, unan = [], [], []
+    for g in preds_guardadas:
+        algos = list(g.keys())
+        if len(algos) < 2:
+            continue
+        M = np.column_stack([g[a][1] for a in algos])  # pred_test por algo
+        sds.append(float(np.mean(np.std(M, axis=1, ddof=1))))
+        B = np.column_stack([(g[a][1] >= _umbral_maxtss(g[a][2], g[a][3])).astype(int) for a in algos])
+        cnt = B.sum(axis=1)
+        agree_mean.append(float(np.mean(cnt)))
+        unan.append(float(np.mean(cnt == len(algos)) * 100.0))
+    if sds:
+        r["algo_sd_mean"] = float(np.mean(sds))
+        r["binary_agreement_mean"] = float(np.mean(agree_mean))
+        r["binary_agreement_unanimous_pct"] = float(np.mean(unan))
+    return r
+
+
 def procesar_especie(sp, pres):
     # Background dentro del área accesible (M) de la especie: buffer alrededor de
     # SUS presencias ∩ tierra-SA (no un fondo Chile compartido). Corrige el
@@ -209,17 +279,23 @@ def procesar_especie(sp, pres):
             # umbral HONESTO: del ensemble en TRAIN, aplicado al test (no se truca con el test)
             ens_tss.append(_tss(ys, pe, _umbral_maxtss(ytr_f, pe_tr)))
     boyce = np.nan
+    ricas: dict[str, float] = {}
     if oof_pe:
         op, oy = np.concatenate(oof_pe), np.concatenate(oof_y)
         boyce = _boyce(op[oy == 1], op[oy == 0])
+        ricas = _metricas_ricas(preds_guardadas, op, oy, dfp, full, preds)
 
-    fila = {"especie": sp, "n_pres": int(pres.shape[0]), "n_pred": len(preds), "n_folds": len(preds_guardadas)}
+    fila = {"especie": sp, "n_pres": int(pres.shape[0]), "n_bg": int(dfb.shape[0]),
+            "n_pred": len(preds), "n_folds": len(preds_guardadas)}
     for a in algos:
         fila[f"auc_{a}"] = float(np.mean(por_fold[a])) if por_fold[a] else np.nan
         fila[f"tss_{a}"] = float(np.mean(tss_fold[a])) if tss_fold[a] else np.nan
     fila["auc_ensemble"] = float(np.mean(ens_auc)) if ens_auc else np.nan
     fila["tss_ensemble"] = float(np.mean(ens_tss)) if ens_tss else np.nan
+    fila["auc_ensemble_std"] = float(np.std(ens_auc)) if ens_auc else np.nan
+    fila["tss_ensemble_std"] = float(np.std(ens_tss)) if ens_tss else np.nan
     fila["boyce_ensemble"] = float(boyce) if boyce == boyce else np.nan
+    fila.update(ricas)
     print(f"  {sp:24s} pred={len(preds)} AUC ens={fila['auc_ensemble']:.3f} maxent={fila['auc_maxent']:.3f} | TSS ens={fila['tss_ensemble']:.3f} | Boyce={fila['boyce_ensemble']:.3f}")
     return fila
 
@@ -252,12 +328,23 @@ def main():
     )
     df = pd.DataFrame(filas)
     SALIDA.parent.mkdir(parents=True, exist_ok=True)
-    df.round(4).to_csv(SALIDA, index=False, encoding="utf-8")
-    print(f"\nGuardado: {SALIDA}")
+    # Tabla completa (rica): todas las columnas, incluida calibración/MESS/acuerdo.
+    df.round(4).to_csv(SALIDA_COMPLETA, index=False, encoding="utf-8")
+    # Tabla compacta (encabezado + pesos para 07): subconjunto estable de columnas.
+    cols = [c for c in COLS_COMPACTAS if c in df.columns]
+    df[cols].round(4).to_csv(SALIDA, index=False, encoding="utf-8")
+    print(f"\nGuardado: {SALIDA}\nGuardado: {SALIDA_COMPLETA}")
     print("\n=== RESUMEN V4 (media sobre especies) ===")
     for a in ["glm", "gam", "rf", "gbm", "maxent", "ensemble"]:
         print(f"  {a:9s} AUC={df[f'auc_{a}'].mean():.3f}  TSS={df[f'tss_{a}'].mean():.3f}")
     print(f"  ensemble Boyce/CBI medio = {df['boyce_ensemble'].mean():.3f}")
+    for col, lab in [("ens_auc_pr", "AUC-PR"), ("ens_brier", "Brier"),
+                     ("ens_or10", "OR10"), ("ens_calib_slope", "calib_slope"),
+                     ("mess_pct_extrapolation", "MESS%extrap"),
+                     ("algo_sd_mean", "SD algos"),
+                     ("binary_agreement_unanimous_pct", "acuerdo unanime %")]:
+        if col in df.columns:
+            print(f"  ensemble {lab:18s} medio = {df[col].mean():.3f}")
 
 
 if __name__ == "__main__":
