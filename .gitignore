@@ -20,6 +20,9 @@ data/raw/natural_earth/
 outputs/maps/*
 outputs/figures/*
 !outputs/**/.gitkeep
+# Figuras canónicas V4 (mapas de idoneidad + panel): SÍ se versionan para revisión.
+!outputs/figures/*_idoneidad_sa.png
+!outputs/figures/_panel_idoneidad_v4.png
 # Se conservan tablas de métricas (CSV) por ser ligeras y revisables
 
 # ---- Python ----
