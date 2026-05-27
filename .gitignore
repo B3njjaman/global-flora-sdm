@@ -53,3 +53,4 @@ outputs/_*.txt
 
 # Carpeta de ensamblaje del paquete (redundante con el zip)
 entrega_jefe/
+entrega CSA/
