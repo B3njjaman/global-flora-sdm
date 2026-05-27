@@ -2,7 +2,8 @@
 05_entrenar_ensemble.py — Entrenamiento del ensemble V4 (PA por algoritmo + CV espacial).
 
 Para cada especie viable (>= MIN_RECORDS_TO_MODEL):
-  1. Presencias + background (10k en Chile, módulo extraccion.background).
+  1. Presencias + background (10k en el ÁREA ACCESIBLE de la especie: buffer
+     ~300 km alrededor de sus presencias ∩ tierra-SA; módulo extraccion.background).
   2. Extrae las 14 predictoras en el background (clima + topografía + fix 60m Atacama).
   3. Filtro de colinealidad (extraccion.predictoras) y folds CV espacial (extraccion.folds).
   4. Entrena 5 algoritmos con PESOS POR ALGORITMO (Barbet-Massin + Valavi):
@@ -147,7 +148,13 @@ def _entrenar_fold(Xtr, ytr, Xte):
     return res
 
 
-def procesar_especie(sp, pres, bgdf):
+def procesar_especie(sp, pres):
+    # Background dentro del área accesible (M) de la especie: buffer alrededor de
+    # SUS presencias ∩ tierra-SA (no un fondo Chile compartido). Corrige el
+    # desajuste presencia(SA)/fondo(Chile).
+    bgdf = extraer_predictoras(
+        bg.muestrear_background_especie(pres.lon.values, pres.lat.values, seed=config.RANDOM_SEED)
+    )
     preds = predictoras.seleccionar_predictoras(pres, PRED)
     dfp = pres.dropna(subset=preds).assign(presence=1)
     dfb = bgdf.dropna(subset=preds).assign(presence=0)
@@ -217,14 +224,30 @@ def procesar_especie(sp, pres, bgdf):
     return fila
 
 
+def _filtrar_sudamerica(base: pd.DataFrame) -> pd.DataFrame:
+    """Descarta coordenadas fuera del bbox de Sudamérica (PREDICTION_BBOX).
+
+    base_datos_completa.csv arrastra unos pocos puntos corruptos (p. ej. una
+    'Argentina' en lat 29 N / lon 0.5 E y dos en el Atlántico) que el filtro SA
+    documentado no había aplicado. Aquí se eliminan antes de modelar.
+    """
+    minx, miny, maxx, maxy = config.PREDICTION_BBOX
+    m = base.lon.between(minx, maxx) & base.lat.between(miny, maxy)
+    n_out = int((~m).sum())
+    if n_out:
+        print(f"Filtro Sudamérica: descarto {n_out} registros fuera del bbox SA.")
+    return base[m].copy()
+
+
 def main():
-    base = pd.read_csv(BASE)
-    bgdf = extraer_predictoras(bg.muestrear_background())
+    base = _filtrar_sudamerica(pd.read_csv(BASE))
     vc = base["especie"].value_counts()
     viables = vc[vc >= config.MIN_RECORDS_TO_MODEL].index.tolist()
     print(f"Entrenando ensemble V4 en {len(viables)} especies viables (paralelo)...")
+    print("Background = area accesible por especie (buffer "
+          f"{bg.BUFFER_KM:.0f} km alrededor de presencias, en tierra-SA).")
     filas = Parallel(n_jobs=4)(
-        delayed(procesar_especie)(sp, base[base.especie == sp].copy(), bgdf.copy())
+        delayed(procesar_especie)(sp, base[base.especie == sp].copy())
         for sp in viables
     )
     df = pd.DataFrame(filas)

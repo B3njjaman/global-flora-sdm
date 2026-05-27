@@ -117,6 +117,10 @@ def muestrear_background(n: int = N_PA, seed: int = config.RANDOM_SEED) -> pd.Da
 
     Añade jitter sub-píxel para que no caigan exactamente en el centro de celda.
     Si n supera las celdas disponibles, usa todas.
+
+    NOTA: muestreo histórico restringido a Chile. Para presencias de Sudamérica
+    usar `muestrear_background_especie` (área accesible por especie), que evita el
+    desajuste presencia(SA)/fondo(Chile).
     """
     rng = np.random.default_rng(seed)
     calib, ds = cargar_mascara_calibracion()
@@ -135,6 +139,67 @@ def muestrear_background(n: int = N_PA, seed: int = config.RANDOM_SEED) -> pd.Da
         ds.close()
     log.info("Background: %d puntos random en %s.", len(lons), config.CALIBRATION_COUNTRY)
     return pd.DataFrame({"lon": lons, "lat": lats, "presence": 0})
+
+
+# Grilla de terreno de Sudamérica (ya enmascarada a tierra): sirve de máscara
+# tierra∩SA y de grilla de muestreo, coherente con la grilla de predicción de [07].
+_GRILLA_SA = _ROOT / "rama_v4" / "data" / "processed" / "rasters_terreno" / "slope.tif"
+
+# Radio del área accesible (M) alrededor de las presencias. 300 km es un valor
+# estándar para definir el fondo de calibración a partir de las presencias.
+BUFFER_KM = 300.0
+
+
+def muestrear_background_especie(
+    pres_lon: np.ndarray,
+    pres_lat: np.ndarray,
+    n: int = N_PA,
+    buffer_km: float = BUFFER_KM,
+    seed: int = config.RANDOM_SEED,
+) -> pd.DataFrame:
+    """Background dentro del área accesible (M) de UNA especie.
+
+    Área accesible = celdas de tierra de Sudamérica a <= `buffer_km` de alguna
+    presencia (distancia geodésica exacta, BallTree-haversine). Así el fondo
+    representa la región que la especie podría ocupar: ni restringido a Chile
+    cuando las presencias se extienden por Sudamérica (desajuste), ni todo el
+    continente cuando son endémicas estrictas (inflación trivial de la
+    discriminación). Devuelve n puntos (lon, lat, presence=0) con jitter sub-píxel.
+    """
+    from sklearn.neighbors import BallTree
+
+    with rasterio.open(_GRILLA_SA) as ds:
+        arr = ds.read(1).astype("float32")
+        valid = ~np.isnan(arr)
+        nod = ds.nodata
+        if nod is not None and not np.isnan(nod):
+            valid &= arr != nod
+        rows, cols = np.where(valid)
+        xs, ys = ds.xy(rows, cols)            # lon, lat de centros de celda tierra-SA
+        rx, ry = ds.transform.a, abs(ds.transform.e)
+
+    xs = np.asarray(xs, dtype="float64")
+    ys = np.asarray(ys, dtype="float64")
+
+    # Celdas a <= buffer_km de alguna presencia (great-circle exacta).
+    tree = BallTree(np.radians(np.column_stack([pres_lat, pres_lon])), metric="haversine")
+    dist, _ = tree.query(np.radians(np.column_stack([ys, xs])), k=1)
+    within = (dist[:, 0] * 6371.0088) <= buffer_km
+    xs, ys = xs[within], ys[within]
+    disp = len(xs)
+    if disp == 0:
+        raise ValueError("Área accesible vacía: ninguna celda de tierra dentro del buffer.")
+
+    rng = np.random.default_rng(seed)
+    n_use = min(n, disp)
+    if n_use < n:
+        log.warning("Área accesible con %d celdas (< %d pedidas); uso todas.", disp, n)
+    idx = rng.choice(disp, size=n_use, replace=False)
+    lon = xs[idx] + rng.uniform(-rx / 2, rx / 2, size=n_use)
+    lat = ys[idx] + rng.uniform(-ry / 2, ry / 2, size=n_use)
+    log.info("Background especie: %d puntos en buffer %.0f km (%d celdas accesibles).",
+             n_use, buffer_km, disp)
+    return pd.DataFrame({"lon": lon, "lat": lat, "presence": 0})
 
 
 # ---------------------------------------------------------------------------

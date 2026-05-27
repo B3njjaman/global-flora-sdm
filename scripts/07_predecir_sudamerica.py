@@ -52,6 +52,13 @@ METRICAS = _ROOT / "outputs" / "tables" / "metricas_v4_ensemble.csv"
 RUTA_MAPS = _ROOT / "outputs" / "maps"
 RUTA_LOGS = _ROOT / "outputs" / "logs"
 
+# Reusar extraer_predictoras / _filtrar_sudamerica del script de entrenamiento
+# (mismo background por especie). Se carga a nivel de módulo para que los workers
+# de joblib lo tengan disponible dentro de predecir_especie.
+import importlib.util  # noqa: E402
+_spec = importlib.util.spec_from_file_location("ent", _ROOT / "scripts" / "05_entrenar_ensemble.py")
+ENT = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(ENT)
+
 
 def construir_grilla():
     """Apila las 14 predictoras alineadas a la grilla SA. Devuelve (Xvalid, valid, (H,W), perfil)."""
@@ -103,11 +110,15 @@ def _fit_predict(Xtr, ytr, w, Xgrid_sel):
     return out
 
 
-def predecir_especie(sp, pres, bgdf, pesos, Xvalid, valid, shape, perfil):
+def predecir_especie(sp, pres, pesos, Xvalid, valid, shape, perfil):
     """Entrena el ensemble y escribe el raster de idoneidad de una especie."""
     t0 = time.time()
     slug = sp.strip().lower().replace(" ", "_").replace(".", "")
     try:
+        # Background dentro del área accesible de la especie (mismo criterio que [05]).
+        bgdf = ENT.extraer_predictoras(
+            bg.muestrear_background_especie(pres.lon.values, pres.lat.values, seed=config.RANDOM_SEED)
+        )
         preds = predictoras.seleccionar_predictoras(pres, PRED)
         sel_idx = [PRED.index(p) for p in preds]
         dfp = pres.dropna(subset=preds); dfb = bgdf.dropna(subset=preds)
@@ -146,26 +157,21 @@ def predecir_especie(sp, pres, bgdf, pesos, Xvalid, valid, shape, perfil):
 
 def main():
     t_ini = time.time()
-    base = pd.read_csv(BASE)
+    base = ENT._filtrar_sudamerica(pd.read_csv(BASE))
     met = pd.read_csv(METRICAS).set_index("especie")
     print("Construyendo grilla de predictoras (Sudamérica)...")
     Xvalid, valid, shape, perfil = construir_grilla()
-    bgcols = ["lon", "lat"] + PRED
-    from extraccion import background as bgmod
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("ent", _ROOT / "scripts" / "05_entrenar_ensemble.py")
-    ent = importlib.util.module_from_spec(spec); spec.loader.exec_module(ent)
-    bgdf = ent.extraer_predictoras(bg.muestrear_background())
 
     vc = base["especie"].value_counts()
     viables = [s for s in vc[vc >= config.MIN_RECORDS_TO_MODEL].index if s in met.index]
     print(f"Prediciendo {len(viables)} especies en paralelo ({Xvalid.shape[0]} celdas válidas)...")
+    print("Background = área accesible por especie (buffer 300 km, en tierra-SA).")
 
     def pesos_de(sp):
         return {a: float(met.loc[sp, f"tss_{a}"]) if f"tss_{a}" in met.columns and pd.notna(met.loc[sp, f"tss_{a}"]) else 0.0 for a in ALGOS}
 
     resultados = Parallel(n_jobs=4)(
-        delayed(predecir_especie)(sp, base[base.especie == sp].copy(), bgdf.copy(),
+        delayed(predecir_especie)(sp, base[base.especie == sp].copy(),
                                   pesos_de(sp), Xvalid, valid, shape, perfil)
         for sp in viables
     )
