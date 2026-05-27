@@ -7,13 +7,13 @@
 > La iteración 3 (Chile, equal-weight, `metrics_all.csv`) queda como referencia histórica
 > más abajo. Ver sección [Resultados — Versión 4](#resultados--versión-4-modelo-canónico).
 
-Pipeline reproducible en stack Python para modelar la distribución potencial de 14 especies de flora endemica chilena con registros en GBIF, combinando multiples algoritmos (GLM, GAM, RF, GBM, MaxEnt) y proyectando bajo escenarios de cambio climatico. La calibracion se acota a **Chile continental**; la prediccion y los mapas se recortan a **Sudamerica**.
+Pipeline reproducible en stack Python para modelar la distribución potencial de flora endemica chilena con registros en GBIF, combinando multiples algoritmos (GLM, GAM, RF, GBM, MaxEnt) en un ensemble **ponderado por TSS**. El alcance es **Sudamérica**; el background de calibración se muestrea por especie dentro de su **área accesible** (buffer 300 km alrededor de sus presencias), y la predicción/los mapas se recortan a Sudamérica.
 
 ---
 
 ## Objetivo
 
-Modelar la distribucion potencial de 14 especies de flora, principalmente endemicas de Chile, a **escala regional** (resolucion 2.5 arc-min, ~5 km), mediante un **ensemble** de cinco algoritmos, y **proyectar a 2050** bajo multiples GCMs y SSPs de CMIP6. La calibracion se realiza dentro de Chile porque las especies son endemicas chilenas: calibrar contra un background planetario infla artificialmente la discriminacion (el modelo aprende "Atacama vs. planeta", no "nicho dentro de Chile"). El diseno es incremental: la iteracion 1 uso variables bioclimaticas + topografia; la iteracion 2 depuro el CV espacial y el background; la iteracion 3 acota el marco geografico a Chile/Sudamerica.
+Modelar la distribucion potencial de 16 especies de flora, principalmente endemicas de Chile, a **escala regional** (resolucion 2.5 arc-min, ~5 km), mediante un **ensemble** de cinco algoritmos ponderado por TSS. El background se muestrea por especie dentro de su **área accesible (M)**: un buffer de 300 km alrededor de sus presencias ∩ tierra-Sudamérica. Esto evita dos errores opuestos: un fondo demasiado amplio (planetario/continental) que infla la discriminación de endémicas, y un fondo fijo (solo Chile) que no representa las presencias que se extienden a Argentina/Perú/Bolivia. El diseno es incremental: iter. 1 bioclim+topografia; iter. 2 CV espacial y background; iter. 3 marco Chile/Sudamerica; **Versión 4: alcance Sudamérica + background por área accesible por especie**.
 
 La especificacion metodologica completa esta en [`docs/proyecto_sdm.md`](docs/proyecto_sdm.md).
 
