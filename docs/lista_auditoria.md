@@ -9,9 +9,9 @@ Documento preparado para revision por jefe/revisor.
 
 ## 1. Resumen ejecutivo
 
-En la iteracion 2 se corrigieron tres defectos: bug de unidades en pendiente, sesgo de background polar, y CV espacial degenerado. En la iteracion 3 se acoto el alcance a Chile (calibracion) / Sudamerica (prediccion). **Esta revision (3.1) corrige el reporte de metricas**, que estaba inflado por dos vias: (a) el TSS se calculaba con un umbral optimizado sobre los propios datos de evaluacion, y (b) se reportaba el OOF agrupado ("pooled") en vez de la media por fold. Ademas se excluye atriplex_semibaccata (n=8) del modelado, por debajo del piso de 50 presencias.
+La iteracion 2 corrigio tres defectos: bug de unidades en pendiente, sesgo de background polar, y CV espacial degenerado. La iteracion 3 acoto el alcance a Chile (calibracion) / Sudamerica (prediccion). Esta revision (3.1) corrige el reporte de metricas, que estaba inflado por dos vias: (a) el TSS se calculaba con un umbral optimizado sobre los propios datos de evaluacion, y (b) se reportaba el OOF agrupado ("pooled") en vez de la media por fold. Ademas se excluye atriplex_semibaccata (n=8) del modelado, por debajo del piso de 50 presencias.
 
-Metricas honestas (CV espacial, **media por fold**, 13 especies): **AUC 0.77, TSS 0.26, Boyce 0.44**. El TSS 0.707 que se reportaba antes era el numero inflado. La transferencia espacial real es floja y muy variable entre subregiones; la utilidad debe leerse **por especie**, no por el promedio: 4 especies confiables (Boyce ≥ 0.77), 4 buenas (0.36–0.59), 4 flojas o no confiables (≤ 0.2, dos negativas). Con metricas por fold, el ensemble **no supera claramente a MaxEnt solo** (TSS 0.26 vs 0.34). El producto es apto como mapa de idoneidad presente regional **solo para las especies confiables y con limitaciones documentadas**; NO es apto para afirmaciones de proyeccion a 2050.
+Metricas corregidas (CV espacial, media por fold, 13 especies): AUC 0.77, TSS 0.26, Boyce 0.44. El TSS 0.707 que se reportaba antes era el numero inflado. La transferencia espacial real es floja y muy variable entre subregiones; la utilidad debe leerse por especie, no por el promedio: 4 especies confiables (Boyce ≥ 0.77), 4 buenas (0.36-0.59), 4 flojas o no confiables (≤ 0.2, dos negativas). Con metricas por fold, el ensemble no supera claramente a MaxEnt solo (TSS 0.26 vs 0.34). El producto es apto como mapa de idoneidad presente regional solo para las especies confiables y con limitaciones documentadas; NO es apto para afirmaciones de proyeccion a 2050.
 
 ---
 
@@ -21,7 +21,7 @@ Metricas honestas (CV espacial, **media por fold**, 13 especies): **AUC 0.77, TS
 - [x] Background (pseudo-ausencias): corregido en iteracion 2 el sesgo hacia zonas polares/glaciales (poda por |lat| <= 55, bio1 >= -5). Corregido en la fuente en iteracion 3: el sampler ahora genera puntos directamente dentro del poligono de Chile (CALIBRATION_COUNTRY="Chile"), no globalmente con poda posterior. El area accesible es coherente con el nicho de especies endemicas chilenas. Verificado: 0 puntos de background fuera de Chile.
 - [x] Validacion cruzada espacial: corregida la grilla global fija que dejaba a las especies endemicas en 1-2 folds (CV degenerado, 12 de 14 especies con metricas NaN). Reemplazada por CV espacial adaptativo (clustering k-means de presencias en 5 folds). Verificado: las 14 especies pasaron a tener 5 folds con presencias y 0 de 14 con metricas NaN.
 - [x] Comparacion de TSS justa: corregido el umbral. Antes el TSS del ensemble se calculaba optimizando el umbral sobre el propio OOF (mirando las etiquetas de evaluacion), lo que lo inflaba. Ahora se usa el umbral fijado en entrenamiento, y el numero de encabezado es el TSS/AUC por fold (media ± SD).
-- [x] Alcance del area accesible (iteracion 3): corregido el sesgo estructural de usar background planetario para modelar endemicas chilenas. El area de calibracion se acota a Chile; la prediccion/mapa se extiende a Sudamerica. Configuracion: CALIBRATION_COUNTRY="Chile", CALIBRATION_BBOX, PREDICTION_BBOX. Las metricas honestas (por fold) son AUC 0.77, TSS 0.26, Boyce 0.44, frente a iter. 2 global (AUC 0.944, TSS 0.822, Boyce 0.68): bajan por el acotamiento regional y por reportar por fold sin trucar el umbral.
+- [x] Alcance del area accesible (iteracion 3): corregido el sesgo estructural de usar background planetario para modelar endemicas chilenas. El area de calibracion se acota a Chile; la prediccion/mapa se extiende a Sudamerica. Configuracion: CALIBRATION_COUNTRY="Chile", CALIBRATION_BBOX, PREDICTION_BBOX. Las metricas corregidas (por fold) son AUC 0.77, TSS 0.26, Boyce 0.44, frente a iter. 2 global (AUC 0.944, TSS 0.822, Boyce 0.68): bajan por el acotamiento regional y por reportar por fold sin trucar el umbral.
 
 ---
 
@@ -58,8 +58,8 @@ Metricas honestas (CV espacial, **media por fold**, 13 especies): **AUC 0.77, TS
 | Algoritmos del ensemble | GLM, GAM, RF, GBM, MaxEnt (5 algoritmos) | Implementado |
 | Hiperparametros | Tuneados via CV | Hecho |
 | Metodo de combinacion: promedio equal-weight | elegido entre TSS^3 y stacking | Elegido |
-| Resultado medio (CV espacial, por fold): TSS | 0.26 (13 sp, honesto) | Verificado |
-| Resultado medio (CV espacial, por fold): AUC | 0.77 (13 sp, honesto) | Verificado |
+| Resultado medio (CV espacial, por fold): TSS | 0.26 (13 sp, sin inflar) | Verificado |
+| Resultado medio (CV espacial, por fold): AUC | 0.77 (13 sp, sin inflar) | Verificado |
 | Resultado medio (CV espacial): Boyce | 0.44 (13 sp) | Verificado |
 | Resultado medio (CV espacial): Brier | 0.04 (engaña: baja prevalencia, calib_slope ≈ 0) | Verificado |
 
@@ -70,7 +70,7 @@ Metricas honestas (CV espacial, **media por fold**, 13 especies): **AUC 0.77, TS
 | TSS | 0.26 | **0.34** | MaxEnt mejor; ensemble gana en 5/13 |
 | AUC | **0.77** | 0.75 | ensemble marginal; gana en 9/13 |
 
-Conclusion: el ensemble **no supera claramente a MaxEnt**; aporta robustez (menor
+Conclusion: el ensemble no supera claramente a MaxEnt; aporta robustez (menor
 dependencia de un algoritmo), no un salto de desempeño. El "equal-weight supera a MaxEnt"
 que se afirmaba antes se basaba en el TSS inflado.
 
@@ -98,4 +98,4 @@ que se afirmaba antes se basaba en el TSS inflado.
 | Uso del mapa de `schinus_areira` para predecir invasividad | NO APTO |
 | Modelado individual de `atriplex_semibaccata` (n=8) | NO APTO (excluida) |
 
-Conclusion: el producto sirve como mapa de idoneidad presente regional **por especie**, no en bloque. Las metricas honestas (por fold, 13 sp) son AUC 0.77, TSS 0.26, Boyce 0.44, con alta variabilidad entre especies: 4 confiables, 4 indicativas, 4 no usables. NO es APTO para proyeccion climatica a 2050 (calculada pero no certificada), ni para inferir invasividad de introducidas, ni para modelar atriplex (excluida por n insuficiente). El TSS 0.707 que se reportaba antes estaba inflado y queda corregido a 0.26 (por fold).
+Conclusion: el producto sirve como mapa de idoneidad presente regional por especie, no en bloque. Las metricas corregidas (por fold, 13 sp) son AUC 0.77, TSS 0.26, Boyce 0.44, con alta variabilidad entre especies: 4 confiables, 4 indicativas, 4 no usables. NO es APTO para proyeccion climatica a 2050 (calculada pero no certificada), ni para inferir invasividad de introducidas, ni para modelar atriplex (excluida por n insuficiente). El TSS 0.707 que se reportaba antes estaba inflado y queda corregido a 0.26 (por fold).
