@@ -1,23 +1,23 @@
 # Resultados — Iteración 1
 
 > **NOTA: documento superado por la iteración 2.** Esta iteración 1 tenía tres
-> fallos corregidos después: pendiente (`slope`) errónea (~90° en casi todo el
-> planeta), ~45% del background en zonas polares, y CV espacial degenerado para
+> fallos que se corrigieron después: pendiente (`slope`) errónea (~90° en casi todo el
+> planeta), ~45% del background en zonas polares y CV espacial degenerado para
 > endémicas (métricas NaN). Los resultados vigentes están en
 > [`informe_modelo.md`](informe_modelo.md). Se conserva este archivo como registro.
 
-Síntesis de la primera iteración del pipeline SDM (`global-flora-sdm`): modelos
-ensemble entrenados, validación con CV espacial, e idoneidad del presente.
-El **forecast a 2050 queda diferido** como mejora (ver §"Trabajo futuro").
+Este es el resumen de la primera iteración del pipeline SDM (`global-flora-sdm`):
+modelos ensemble entrenados, validación con CV espacial e idoneidad del presente.
+El forecast a 2050 queda diferido como mejora (ver §"Trabajo futuro").
 
 ## Datos
 
-- **Ocurrencias GBIF:** 13.354 → **4.566** tras limpieza (dedup, incertidumbre,
-  máscara de océano, thinning espacial a 2.5′). 14 especies modelables (grupos A/B).
-- **Predictoras:** 10 bioclim WorldClim v2.1 + 4 topográficas (elevación, pendiente,
+- **Ocurrencias GBIF:** 13.354 → **4.566** tras la limpieza (dedup, incertidumbre,
+  máscara de océano, thinning espacial a 2.5′). Quedan 14 especies modelables (grupos A/B).
+- **Predictoras:** 10 bioclim WorldClim v2.1 más 4 topográficas (elevación, pendiente,
   northness, eastness), alineadas a 2.5′ (~5 km) global.
-- **Background:** 20.000 puntos (target-group). Selección de predictores por
-  correlación (|r|>0.7) + VIF (>10). CV espacial en bloques de 750 km.
+- **Background:** 20.000 puntos (target-group). La selección de predictores se hizo por
+  correlación (|r|>0.7) y VIF (>10). CV espacial en bloques de 750 km.
 
 ## Validación (CV espacial leave-one-block-out)
 
@@ -43,31 +43,31 @@ Tabla completa (TSS/AUC/AUC-PR/F1/Brier/Boyce/OR10/MESS por algoritmo y ensemble
 
 ## Lectura de los resultados
 
-- **10 especies con modelos de moderados a sólidos**, aptas para inferir idoneidad.
-- **3-4 endémicas degeneradas** (*Krameria, Eulychnia, Skytanthus*): **no por falta
-  de datos** (tienen 84-223 presencias) sino por la **geometría del CV espacial** —
-  sus presencias caen en 1-2 bloques de 750 km, y el leave-one-block-out deja fuera
-  todo su rango, colapsando el TSS. Es la tensión esperada entre CV espacial honesto
-  y endémicas de rango estrecho (ver `docs/proyecto_sdm.md`, nota 7).
-- **SD alta entre folds** (p. ej. *Nolana sedifolia* 0.53±0.47) = mala transferencia
-  entre regiones; coherente con la naturaleza endémica.
+- Hay 10 especies con modelos de moderados a sólidos, aptas para inferir idoneidad.
+- Las 3-4 endémicas degeneradas (*Krameria, Eulychnia, Skytanthus*) no fallan por falta
+  de datos (tienen 84-223 presencias) sino por la geometría del CV espacial: sus
+  presencias caen en 1-2 bloques de 750 km, y el leave-one-block-out deja fuera
+  todo su rango, lo que colapsa el TSS. Es la tensión esperada entre un CV espacial
+  estricto y endémicas de rango estrecho (ver `docs/proyecto_sdm.md`, nota 7).
+- Una SD alta entre folds (p. ej. *Nolana sedifolia* 0.53±0.47) indica mala transferencia
+  entre regiones, algo coherente con la naturaleza endémica.
 
 ## Salidas de la iteración
 
-- `outputs/maps/{slug}_present_suitability.tif` — idoneidad del presente (0–1), 14 sp.
-- `outputs/figures/{slug}_present.png` — mapas con overlay de ocurrencias (Etapa 8).
-- `outputs/tables/metrics_*.csv` — métricas de validación.
-- `data/modeling/ensemble_models/{slug}.joblib` — modelos ensemble reutilizables.
+- `outputs/maps/{slug}_present_suitability.tif`: idoneidad del presente (0–1), 14 sp.
+- `outputs/figures/{slug}_present.png`: mapas con overlay de ocurrencias (Etapa 8).
+- `outputs/tables/metrics_*.csv`: métricas de validación.
+- `data/modeling/ensemble_models/{slug}.joblib`: modelos ensemble reutilizables.
 
 ## Trabajo futuro (prioridad)
 
-1. **Bloque CV adaptativo por especie** (~250-350 km para endémicas de rango estrecho)
-   → reparte presencias en ≥3 folds y rescata los modelos degenerados sin más datos.
-2. **Forecast 2050 (diferido).** Implementado en `07_forecast_2050.py`: descarga y
-   proyecta las 8 capas CMIP6 (ACCESS-CM2/IPSL/MPI/MRI × ssp245/ssp585). Pendiente:
-   optimizar el **MESS global** (cuello de botella; ya vectorizado con `searchsorted`,
+1. Bloque CV adaptativo por especie (~250-350 km para endémicas de rango estrecho)
+   para repartir presencias en ≥3 folds y rescatar los modelos degenerados sin más datos.
+2. Forecast 2050 (diferido). Está implementado en `07_forecast_2050.py`: descarga y
+   proyecta las 8 capas CMIP6 (ACCESS-CM2/IPSL/MPI/MRI × ssp245/ssp585). Queda pendiente
+   optimizar el MESS global (es el cuello de botella; ya está vectorizado con `searchsorted`,
    falta procesarlo por bloques/submuestreo para que escale a 37M píxeles).
-3. **Relleno de borde costero** en terreno (rellenar NaN de tierra con 0 antes de
+3. Relleno de borde costero en terreno (rellenar NaN de tierra con 0 antes de
    enmascarar) para recuperar presencias costeras (p. ej. *N. sedifolia* 77→37).
-4. **Modelo regional** para las endémicas chilenas; **pooling** de congéneres *Nolana*.
+4. Modelo regional para las endémicas chilenas, con pooling de congéneres *Nolana*.
 5. Re-descarga GBIF particionada para las especies truncadas en 3.000 registros.
