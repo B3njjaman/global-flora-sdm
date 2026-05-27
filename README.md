@@ -19,8 +19,8 @@ La especificacion metodologica completa esta en [`docs/proyecto_sdm.md`](docs/pr
 
 ## Datos
 
-- **Ocurrencias:** GBIF — registros de 14 especies (`data/raw/gbif_distribucion_especies.xlsx`), filtrados a Chile continental para background y calibracion.
-- **Predictoras (presente):** WorldClim v2.1 bioclim (10 capas) + elevacion + topografia derivada; recortadas al bbox de Chile para entrenamiento.
+- **Ocurrencias:** GBIF — registros de 21 especies (16 modelables) filtrados a **Sudamérica**; base de modelado en `rama_v4/data/processed/base_datos_completa.csv`.
+- **Predictoras (presente):** WorldClim v2.1 bioclim (10 capas) + elevacion + topografia derivada (slope/northness/eastness, grilla SA). El background de cada especie se extrae dentro de su área accesible.
 - **Predictoras (futuro):** WorldClim Future / CMIP6 — >=4 GCMs x >=2 SSPs, periodo 2041-2060; predicciones recortadas al bbox de Sudamerica.
 
 > Las capas raster (WorldClim/CMIP6) **no se versionan** en el repositorio por tamano; se descargan ejecutando `scripts/02_capas_presente.py`. Ver `.gitignore`.
