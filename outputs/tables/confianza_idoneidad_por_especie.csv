@@ -1,0 +1,6 @@
+especie,slug,n_pres,n_pred,metodo,confianza,archivo
+Aloysia salviifolia,aloysia_salviifolia,27,6,"MaxEnt regularizado (linear+product, beta=3.0)",BAJA,aloysia_salviifolia_idoneidad_sa.tif
+Atriplex deserticola,atriplex_deserticola,33,6,"MaxEnt regularizado (linear+product, beta=3.0)",BAJA,atriplex_deserticola_idoneidad_sa.tif
+Dinemagonum gayanum,dinemagonum_gayanum,46,7,"MaxEnt regularizado (linear+product, beta=3.0)",BAJA,dinemagonum_gayanum_idoneidad_sa.tif
+Nolana rostrata,nolana_rostrata,47,6,"MaxEnt regularizado (linear+product, beta=3.0)",BAJA,nolana_rostrata_idoneidad_sa.tif
+Nolana albescens,nolana_albescens,16,0,EOO: polígono convexo + decaimiento gaussiano 50 km,RANGO (no SDM),nolana_albescens_idoneidad_sa.tif
