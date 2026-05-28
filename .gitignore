@@ -23,6 +23,10 @@ outputs/figures/*
 # Figuras canónicas V4 (mapas de idoneidad + panel): SÍ se versionan para revisión.
 !outputs/figures/*_idoneidad_sa.png
 !outputs/figures/_panel_idoneidad_v4.png
+# Rasters de idoneidad para QGIS (21 especies): SÍ se versionan para abrirlos
+# directamente desde el repo. Excepción a la regla global *.tif de arriba.
+!outputs/raster_idoneidad/
+!outputs/raster_idoneidad/*.tif
 # Se conservan tablas de métricas (CSV) por ser ligeras y revisables
 
 # ---- Python ----
