@@ -2,9 +2,9 @@
 
 ## Objetivo
 
-Modelar la distribución potencial de especies de flora chilena con registros en GBIF a **escala regional**, calibrando dentro de **Chile** como área accesible y proyectando/visualizando los mapas de idoneidad a **Sudamérica**, en **stack Python**, usando un **enfoque ensemble** que combina múltiples algoritmos (más allá de MaxEnt), y **proyectar a 2050** bajo escenarios CMIP6.
+Modelar la distribución potencial de especies de flora chilena con registros en GBIF a escala regional. La calibración se hace dentro de Chile, tomado como área accesible, y los mapas de idoneidad se proyectan y visualizan sobre Sudamérica. Todo el trabajo se apoya en un stack Python y en un enfoque **ensemble** que combina varios algoritmos (más allá de MaxEnt), con proyección a 2050 bajo escenarios CMIP6.
 
-Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topografía; iteraciones siguientes incorporan groundwater (pozos, ríos), índices temporales (NDVI/EVI), y eventualmente deep learning sobre series temporales para forecasting nativo.
+El pipeline está diseñado para crecer: las primeras iteraciones usan bioclim más topografía, y las siguientes incorporan groundwater (pozos, ríos), índices temporales (NDVI/EVI) y, eventualmente, deep learning sobre series temporales para forecasting nativo.
 
 ## Decisiones de diseño
 
@@ -22,7 +22,7 @@ Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topo
 - **Fuente:** GBIF (13.354 registros, 21 especies)
 - **Distribución geográfica:** Chile (6.990), Australia (3.076), EE.UU. (975), Colombia (552), Bolivia (342), Sudáfrica (342), Perú (314), Argentina (291), España (254), México (98), otros
 - **Especies dominantes:** *Atriplex semibaccata*, *Nolana divaricata*, *Schinus areira*, *Encelia canescens*, *Nolana sedifolia*, *Krameria cistoidea*, *Eulychnia acida*, entre otras
-- **Sesgo conocido:** tres especies (*Atriplex semibaccata*, *Nolana divaricata*, *Schinus areira*) tienen exactamente 3.000 registros — techo de descarga GBIF. Para análisis riguroso, rehacer descarga particionada vía API GBIF
+- **Sesgo conocido:** tres especies (*Atriplex semibaccata*, *Nolana divaricata*, *Schinus areira*) tienen exactamente 3.000 registros, es decir el techo de descarga de GBIF. Para análisis riguroso, rehacer descarga particionada vía API GBIF
 
 ## Estrategia por tipo de especie
 
@@ -112,7 +112,7 @@ Pipeline diseñado para **crecer**: las primeras iteraciones usan bioclim + topo
 ### Etapa 3 — Dataset modelable (`04_extraccion.py`)
 
 - Extraer valores de raster en cada punto de presencia (`rasterstats` o `rioxarray`)
-- Generar **background points**: 10.000–50.000 puntos muestreados **dentro de Chile** (polígono Natural Earth admin-0 intersección tierra; respaldo: bbox `CALIBRATION_BBOX`). Configuración: `CALIBRATION_COUNTRY="Chile"`. Esto define el área accesible y evita inflar la discriminación con background planetario
+- Generar **background points**: 10.000–50.000 puntos muestreados dentro de Chile (polígono Natural Earth admin-0 intersección tierra; respaldo: bbox `CALIBRATION_BBOX`). Configuración: `CALIBRATION_COUNTRY="Chile"`. Esto define el área accesible y evita inflar la discriminación con background planetario
 - **Target-group background** (recomendado): sacar puntos con probabilidad proporcional a densidad de registros del grupo taxonómico dentro del área de calibración (Chile)
 - **Recorte de presencias:** igualmente se filtran al polígono de Chile antes de modelar
 - **Colinealidad:** VIF y matriz de correlación; eliminar |r| > 0.7 o VIF > 10
@@ -193,7 +193,7 @@ Al proyectar desde Chile a Sudamérica y especialmente en forecasting, reportar 
 
 #### 5.6 Evaluación del ensemble (no solo modelos individuales)
 
-- **SD entre algoritmos** por píxel — mapa de incertidumbre
+- **SD entre algoritmos** por píxel, que da un mapa de incertidumbre
 - **Acuerdo binario:** cuántos de los 5 modelos predicen presencia tras umbralizar (5/5 = alta confianza)
 - **Ensemble vs. mejor modelo individual:** el ensemble debe igualar o superar
 
@@ -236,7 +236,7 @@ Idealmente, antes de confiar en el forecast a 2050:
 3. Comparar contra registros GBIF posteriores a 2000 no usados en entrenamiento
 4. Si el hindcast acierta, el forecast 2050 es más defendible
 
-Esto sigue la estrategia de Cavanaugh et al. (2022) — única forma honesta de validar proyecciones temporales.
+Esto sigue la estrategia de Cavanaugh et al. (2022), la única forma rigurosa de validar proyecciones temporales.
 
 ## Estructura de carpetas
 
@@ -292,7 +292,7 @@ Una vez funcionando la iteración 1, el pipeline está diseñado para crecer en 
 - Arquitectura: LSTM/Transformer sobre series temporales + CNN sobre patches espaciales
 - Reemplaza el ensemble clásico cuando la pregunta requiere dinámica temporal explícita
 - Implementación: PyTorch
-- Referencia metodológica: Deneu et al. (2022) — "Predicting species distributions with environmental time series data and deep learning"
+- Referencia metodológica: Deneu et al. (2022), "Predicting species distributions with environmental time series data and deep learning"
 
 ### Iteración 5 — Forecasting nativo (no solo proyección)
 - En vez de "entrenar con promedio histórico → proyectar con promedio futuro", el modelo aprende dinámica temporal y proyecta secuencias
@@ -306,15 +306,15 @@ Una vez funcionando la iteración 1, el pipeline está diseñado para crecer en 
 
 ## Notas metodológicas relevantes
 
-1. **MaxEnt no es "malo", solo es uno.** Ensemble reduce sesgo. RF y GBM suelen ganarle a MaxEnt en discriminación, pero MaxEnt suele calibrar mejor.
+1. **MaxEnt es uno más del conjunto.** El ensemble reduce el sesgo de depender de un solo algoritmo. RF y GBM suelen ganarle a MaxEnt en discriminación, pero MaxEnt suele calibrar mejor.
 
 2. **El thinning espacial importa más que el algoritmo.** Especialmente cuando el background está acotado a Chile, donde el sesgo GBIF concentrado en zonas accesibles puede distorsionar el nicho aprendido.
 
-3. **Cross-validation espacial no es opcional.** AUC con CV aleatorio en SDM moderno está desacreditado. Métricas de 0.95+ son bandera roja, no verde.
+3. **La validación cruzada espacial es obligatoria.** El AUC con CV aleatorio en SDM moderno está desacreditado. Un valor de 0.95 o más debe leerse como bandera roja antes que como señal de éxito.
 
 4. **Reportar MESS siempre.** Al proyectar desde Chile a toda Sudamérica y especialmente en forecast, partes del mapa estarán fuera del espacio de entrenamiento.
 
-5. **Forecasting honesto requiere hindcasting.** Validar con período pasado conocido antes de confiar en proyecciones futuras (Cavanaugh et al. 2022).
+5. **Todo forecasting serio requiere hindcasting.** Validar con período pasado conocido antes de confiar en proyecciones futuras (Cavanaugh et al. 2022).
 
 6. **Incertidumbre del forecast crece con el tiempo.** Brodie et al. (2022): primeros 30 años el poder predictivo se mantiene; más allá la incertidumbre se dispara y depende de qué tan novedoso es el clima futuro vs. entrenamiento.
 
@@ -326,16 +326,16 @@ Una vez funcionando la iteración 1, el pipeline está diseñado para crecer en 
 
 ### SDM general y validación
 - Hijmans et al. (2005), Fick & Hijmans (2017). WorldClim. *Int. J. Climatology*
-- Norberg et al. (2019). A comprehensive evaluation of 33 SDMs. *Ecological Monographs* — el benchmark de referencia
+- Norberg et al. (2019). A comprehensive evaluation of 33 SDMs. *Ecological Monographs* (el benchmark de referencia)
 - Thuiller et al. (2009). BIOMOD ensemble forecasting. *Ecography*
 - Hao et al. (2019). Review of ensemble SDMs. *Diversity and Distributions*
 - Valavi et al. (2022). Predictive performance of presence-only SDMs. *Ecological Monographs*
-- Zurell et al. (2020). ODMAP — standard protocol for SDM reporting. *Ecography*
+- Zurell et al. (2020). ODMAP: standard protocol for SDM reporting. *Ecography*
 - Aiello-Lammens et al. (2015). spThin. *Ecography*
 
 ### Limpieza de datos y sesgo
 - Zizka et al. (2019). CoordinateCleaner. *Methods Ecol. Evol.*
-- Phillips et al. (2009). Sample selection bias — target-group background. *Ecol. Appl.*
+- Phillips et al. (2009). Sample selection bias: target-group background. *Ecol. Appl.*
 
 ### Validación espacial
 - Roberts et al. (2017). Cross-validation strategies for spatial data. *Ecography*
@@ -347,18 +347,18 @@ Una vez funcionando la iteración 1, el pipeline está diseñado para crecer en 
 - Liu et al. (2013). Selecting thresholds with presence-only data. *J. Biogeography*
 
 ### Extrapolación
-- Elith et al. (2010). MESS — art of modelling range-shifting species. *Methods Ecol. Evol.*
-- Mesgaran et al. (2014). ExDet — quantifying novelty. *Diversity & Distributions*
+- Elith et al. (2010). MESS: art of modelling range-shifting species. *Methods Ecol. Evol.*
+- Mesgaran et al. (2014). ExDet: quantifying novelty. *Diversity & Distributions*
 
 ### Forecasting y proyecciones climáticas
-- **Brodie et al. (2022). Quantifying and reducing uncertainty in climate projections of SDMs.** *Global Change Biology* — calibrar expectativas de forecast
-- **Cavanaugh et al. (2022). Hindcast-validated SDMs reveal future vulnerabilities.** *Ecology and Evolution* — técnica de validación de forecasts
-- **Sridhar et al. (2017). Ensemble forecasting of distributional shifts.** *Ecology and Evolution* — template práctico
+- **Brodie et al. (2022). Quantifying and reducing uncertainty in climate projections of SDMs.** *Global Change Biology*. Útil para calibrar expectativas de forecast
+- **Cavanaugh et al. (2022). Hindcast-validated SDMs reveal future vulnerabilities.** *Ecology and Evolution* (técnica de validación de forecasts)
+- **Sridhar et al. (2017). Ensemble forecasting of distributional shifts.** *Ecology and Evolution*. Sirve de template práctico
 
 ### Series temporales y deep learning (iteraciones futuras)
-- **Deneu et al. (2022). Predicting species distributions with environmental time series data and deep learning.** bioRxiv — el paper estrella para forecasting con DL
-- Kellenberger et al. (2026). Performance of deep learning for SDMs. *Global Ecology and Biogeography* — realismo sobre DL en SDM
+- **Deneu et al. (2022). Predicting species distributions with environmental time series data and deep learning.** bioRxiv (el paper estrella para forecasting con DL)
+- Kellenberger et al. (2026). Performance of deep learning for SDMs. *Global Ecology and Biogeography*. Aporta realismo sobre DL en SDM
 
 ### Variables hidrogeológicas (iteración 2)
-- **Li et al. (2025). Mapping shallow groundwater solute footprints using hydrologically enhanced SDM.** *Water Resources Research* — framework SDM + hidrogeología
-- **Wang et al. (2023). Simulation of potential vegetation in arid areas at regional scale.** — groundwater depth como predictor concreto
+- **Li et al. (2025). Mapping shallow groundwater solute footprints using hydrologically enhanced SDM.** *Water Resources Research* (framework SDM + hidrogeología)
+- **Wang et al. (2023). Simulation of potential vegetation in arid areas at regional scale.** Usa groundwater depth como predictor concreto

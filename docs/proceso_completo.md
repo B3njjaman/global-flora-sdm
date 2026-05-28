@@ -5,7 +5,7 @@ encontró mal, cómo se diagnosticó, qué se corrigió, qué experimentos se hi
 y por qué se tomó cada decisión. Objetivo: que cualquier persona entienda el
 proceso completo y pueda auditarlo o reproducirlo.
 
-Resultado final en una línea: se pasó de **12 de 14 especies con métricas rotas
+Como resumen, se pasó de **12 de 14 especies con métricas rotas
 (NaN)** a **14 de 14 validables**, con un ensemble que **iguala a MaxEnt**
 (TSS 0.82, AUC 0.94) y aporta robustez e incertidumbre.
 
@@ -26,32 +26,32 @@ Resultado final en una línea: se pasó de **12 de 14 especies con métricas rot
 
 ### 1.1 Pendiente (`slope`) corrupta
 Al inspeccionar los datos extraídos, la pendiente tenía **mediana 89.8 grados y el
-99% de los puntos por encima de 80 grados**: el modelo "creía" que casi toda la
-Tierra es un acantilado vertical, lo cual es físicamente imposible.
+99% de los puntos por encima de 80 grados**. Dicho de otro modo, el modelo "creía"
+que casi toda la Tierra es un acantilado vertical, algo físicamente imposible.
 
-Causa: `xrspatial.slope()` asume coordenadas en metros (CRS proyectado), pero la
-grilla está en grados (EPSG:4326) y la elevación en metros. El gradiente dz/dx
-sale gigantesco (metros por grado) y `atan(gigante) ≈ 90°`. La variable entró
-como predictor en 9 de 14 modelos: ruido casi constante.
+La causa está en que `xrspatial.slope()` asume coordenadas en metros (CRS
+proyectado), pero la grilla está en grados (EPSG:4326) y la elevación en metros. El
+gradiente dz/dx sale gigantesco (metros por grado) y `atan(gigante) ≈ 90°`. La
+variable entró como predictor en 9 de 14 modelos, donde aportaba ruido casi constante.
 
 ### 1.2 Background (pseudo-ausencias) sesgado a los polos
-**45% de los puntos de background caían en zonas polares/glaciales** (Antártida,
+El 45% de los puntos de background caían en zonas polares o glaciales (Antártida,
 Ártico, Siberia), y 28.5% tenían temperatura media anual por debajo de -20 grados.
 Ninguna de estas especies árido-templadas podría registrarse ahí.
 
-Causa: el "target-group background" aplicaba un suavizado de Laplace
+La causa: el "target-group background" aplicaba un suavizado de Laplace
 (`effort[land] += 1.0`) sobre TODA la tierra. Con millones de celdas y solo ~4.566
 registros reales, el suavizado aplastaba la señal de esfuerzo de muestreo y el
-background terminaba prácticamente uniforme sobre la tierra; como los polos son
+background terminaba prácticamente uniforme sobre la tierra. Como los polos son
 una fracción enorme de la superficie, quedaban sobre-representados.
 
-Efecto en los modelos: separar el nicho de una especie de un background dominado
-por la Antártida es trivial. De ahí salían las **AUC infladas de 0.95–1.00** que
-el documento de diseño ya marcaba como bandera roja.
+El efecto en los modelos es claro: separar el nicho de una especie de un background
+dominado por la Antártida resulta trivial. De ahí salían las **AUC infladas de
+0.95–1.00** que el documento de diseño ya marcaba como bandera roja.
 
 ### 1.3 Validación cruzada espacial degenerada (el fallo más grave)
 La grilla global fija de 750 km repartía las presencias de una endémica de rango
-estrecho en **1 o 2 bloques**, es decir 1–2 folds. Los otros 3–4 folds quedaban
+estrecho en 1 o 2 bloques, es decir 1–2 folds. Los otros 3–4 folds quedaban
 sin presencias, se saltaban por completo, y los puntos de esos folds nunca recibían
 una predicción out-of-fold (OOF). Esos NaN rompían todas las métricas basadas en
 sklearn (AUC, AUC-PR, Brier, calibración), que quedaban en NaN silenciosamente.
@@ -90,8 +90,8 @@ tres lugares: los datasets (`fix_slope_base_datos.py`), el código fuente
 Poda del background no-hábitat (`quemar_background_inservible.py`) con criterio
 ligado a los datos (ninguna presencia lo viola): se eliminó el background con
 `bio1 < -5` o `|lat| > 55` o `bio4 == 0`. Resultado: **270.500 → 132.835 puntos
-(-51%)**, rango de latitud del background de -89.9/+83.6 a -55/+55, y **0 puntos
-con bio1 < -20**. Las presencias (registros GBIF reales) no se tocaron.
+(-51%)**, rango de latitud del background de -89.9/+83.6 a -55/+55, y 0 puntos
+con bio1 < -20. Las presencias (registros GBIF reales) no se tocaron.
 
 ### 2.3 Verificación de calidad de predictores
 - 0 NaN en predictores y coordenadas.
@@ -110,7 +110,7 @@ asigna al fold del centroide de presencias más cercano. El tamaño de fold se
 adapta al rango de cada especie (continental para cosmopolitas, subregional para
 endémicas), garantizando que **cada fold contenga presencias**.
 
-Verificación: las 14 especies pasaron a tener **5 folds con presencias** (antes:
+Verificación: las 14 especies pasaron a tener 5 folds con presencias (antes:
 eulychnia 1, krameria/nolana 2, etc.) y **0 de 14 con métricas NaN** (antes 12/14).
 
 Mejoras de calidad asociadas: escalado ajustado dentro de cada fold (sin fuga de
@@ -157,17 +157,17 @@ sobre OOF. Se unificó (ambos al umbral maxTSS sobre OOF) para que la comparaci�
 ensemble vs MaxEnt sea justa.
 
 > **Corrección posterior (revisión 3.1):** unificar "al umbral óptimo sobre OOF" fue
-> un error — optimizar el umbral sobre el propio conjunto de evaluación infla el TSS.
-> Se revirtió: el TSS del ensemble se reporta al umbral de **entrenamiento**, y el
-> encabezado pasó a ser el **TSS por fold (media ± SD)**. Con eso, el TSS medio honesto
+> un error, porque optimizar el umbral sobre el propio conjunto de evaluación infla el
+> TSS. Se revirtió: el TSS del ensemble se reporta al umbral de **entrenamiento**, y el
+> encabezado pasó a ser el **TSS por fold (media ± SD)**. Con eso, el TSS medio real
 > es 0.26, no 0.82/0.707, y el ensemble deja de "superar" a MaxEnt.
 
 ---
 
 ## 6. Resultado final (CV espacial, ensemble equal-weight)
 
-**Media: TSS 0.82 · AUC 0.94 · Boyce 0.68 · Brier 0.04. Las 14 especies con
-métricas completas.**
+Media: TSS 0.82 · AUC 0.94 · Boyce 0.68 · Brier 0.04. Las 14 especies con
+métricas completas.
 
 | Especie | n | TSS | AUC | Boyce |
 |---|---:|---:|---:|---:|
@@ -194,19 +194,19 @@ métricas completas.**
 | Ensemble ≥ MaxEnt (TSS) | 8 / 14 | — |
 
 El ensemble **iguala a MaxEnt** (diferencia de TSS 0.004, dentro del ruido), lo
-supera levemente en AUC, y le gana en 8 de 14 especies. Su valor diferencial no es
-un TSS más alto sino **robustez** (no depende de un solo algoritmo) e
-**incertidumbre** (acuerdo entre los 5 modelos por píxel).
+supera levemente en AUC y le gana en 8 de 14 especies. Su valor diferencial no pasa
+por un TSS más alto. Está en la robustez (no depende de un solo algoritmo) y en la
+incertidumbre que entrega (acuerdo entre los 5 modelos por píxel).
 
 ---
 
-## 7. Lectura honesta y limitaciones
+## 7. Lectura realista y limitaciones
 
 - 12 de 14 especies son sólidas/buenas bajo validación espacial estricta.
-- **schinus_areira** es la excepción: es una especie introducida y su Boyce
-  negativo indica que no transfiere bien entre regiones (su distribución la marca
-  la historia de invasión, no solo el clima). No usar su mapa para predecir
-  invasividad sin un marco específico.
+- **schinus_areira** es la excepción. Es una especie introducida y su Boyce
+  negativo indica que no transfiere bien entre regiones, ya que su distribución la
+  marca la historia de invasión y no solo el clima. Conviene no usar su mapa para
+  predecir invasividad sin un marco específico.
 - **Pendientes declarados:** forecast a 2050 (CMIP6) no ejecutado ni validado (no
   presentar proyecciones de cambio climático todavía); sin validación por
   hindcasting; el sampler de background sigue siendo global en origen (se saneó por
@@ -239,10 +239,10 @@ Las métricas de iteración 2 seguían en AUC 0.95–0.99. La poda polar del bac
 permanecía intacto: el background cubría **todo el planeta**, y las 14 especies son
 endémicas o cuasi-endémicas chilenas. Separar el nicho climático de una planta del
 desierto chileno de "el resto del mundo" es una tarea trivial para cualquier
-clasificador; el AUC alto no refleja capacidad discriminativa real sino la enormidad
-del contraste geográfico.
+clasificador; el AUC alto refleja la enormidad del contraste geográfico más que una
+capacidad discriminativa real.
 
-**Evidencia concreta — skytanthus_acutus:**
+**Evidencia concreta, skytanthus_acutus:**
 
 ```
 Presencias:  lon [-71, -70]  lat [-36, -24]   (franja andina chilena)
@@ -261,9 +261,9 @@ modelado, validación) no se tocó.
 ### `config.py`
 Se añadieron dos parámetros de área:
 
-- `CALIBRATION_COUNTRY = "Chile"` — nombre para la máscara de tierra.
-- `CALIBRATION_BBOX` — bounding box del Chile continental.
-- `PREDICTION_BBOX` — bounding box de Sudamérica (para proyecciones y mapas).
+- `CALIBRATION_COUNTRY = "Chile"`, nombre para la máscara de tierra.
+- `CALIBRATION_BBOX`, bounding box del Chile continental.
+- `PREDICTION_BBOX`, bounding box de Sudamérica (para proyecciones y mapas).
 
 ### `04_extraccion.py`
 Nuevo helper `_load_calibration_mask` que intersecta la capa de tierra (Natural
@@ -302,13 +302,13 @@ El recorte es el Chile continental exacto (excluye la Antártida chilena).
 
 ---
 
-## Resultados: métricas honestas tras acotar el área
+## Resultados: métricas reales tras acotar el área
 
 Las métricas **bajaron** respecto a iteración 2. Eso es la señal correcta: antes
 estaban infladas por el contraste geográfico trivial; ahora el modelo tiene que
 discriminar dentro del territorio donde las especies realmente viven.
 
-**Medias (CV espacial):** *(iter. 3 = numeros honestos por fold, revision 3.1)*
+**Medias (CV espacial):** *(iter. 3 = numeros por fold sin inflar, revision 3.1)*
 
 | Metrica | Iteracion 2 (global) | Iteracion 3 (Chile, por fold) |
 |---|---:|---:|
